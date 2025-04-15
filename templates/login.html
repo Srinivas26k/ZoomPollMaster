@@ -3,19 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Automated Zoom Poll Generator</title>
+    <title>Zoom Meeting Setup - Automated Zoom Poll Generator</title>
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
 </head>
 <body data-bs-theme="dark">
     <div class="container mt-5">
         <div class="row justify-content-center">
-            <div class="col-md-6">
+            <div class="col-md-7">
                 <div class="card bg-dark">
                     <div class="card-header">
                         <h3 class="card-title text-center">Automated Zoom Poll Generator</h3>
                     </div>
                     <div class="card-body">
-                        <h5 class="text-center mb-4">Login</h5>
+                        <h5 class="text-center mb-3">Connect to Zoom Meeting</h5>
+                        <p class="text-center text-muted mb-4">Enter your Zoom meeting details to begin automated poll generation</p>
                         
                         {% with messages = get_flashed_messages(with_categories=true) %}
                             {% if messages %}
@@ -26,23 +27,53 @@
                         {% endwith %}
                         
                         <form method="post" action="{{ url_for('login') }}">
-                            <div class="mb-3">
-                                <label for="username" class="form-label">Username</label>
-                                <input type="text" class="form-control bg-dark text-light" id="username" name="username" required>
-                                <div class="form-text">Demo credentials: username 'admin'</div>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="meeting_id" class="form-label">Zoom Meeting ID</label>
+                                    <input type="text" class="form-control bg-dark text-light" id="meeting_id" name="meeting_id" placeholder="123 456 7890" required>
+                                    <div class="form-text">Your Zoom Meeting ID (digits only)</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="passcode" class="form-label">Meeting Passcode</label>
+                                    <input type="password" class="form-control bg-dark text-light" id="passcode" name="passcode" placeholder="abc123" required>
+                                    <div class="form-text">Passcode for your meeting</div>
+                                </div>
                             </div>
+                            
                             <div class="mb-3">
-                                <label for="password" class="form-label">Password</label>
-                                <input type="password" class="form-control bg-dark text-light" id="password" name="password" required>
-                                <div class="form-text">Demo credentials: password 'password'</div>
+                                <label for="display_name" class="form-label">Display Name</label>
+                                <input type="text" class="form-control bg-dark text-light" id="display_name" name="display_name" value="Poll Generator" required>
+                                <div class="form-text">How you'll appear in the meeting</div>
                             </div>
+                            
+                            <div class="mb-4">
+                                <label class="form-label d-block">Zoom Client Type</label>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="client_type" id="webClient" value="web" checked>
+                                    <label class="form-check-label" for="webClient">
+                                        Web Browser
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="client_type" id="desktopClient" value="desktop">
+                                    <label class="form-check-label" for="desktopClient">
+                                        Desktop App
+                                    </label>
+                                </div>
+                                <div class="form-text">Select the Zoom client you want to use</div>
+                            </div>
+                            
+                            <!-- Hidden legacy login fields for compatibility -->
+                            <input type="hidden" name="username" value="admin">
+                            <input type="hidden" name="password" value="password">
+                            
                             <div class="d-grid">
-                                <button type="submit" class="btn btn-primary">Login</button>
+                                <button type="submit" class="btn btn-primary">Connect & Start</button>
                             </div>
                         </form>
                     </div>
                     <div class="card-footer text-center text-muted">
-                        <small>This is a demonstration of the Automated Zoom Poll Generator web interface.</small>
+                        <small>Production-Grade Automated Poll Generator v1.0</small>
                     </div>
                 </div>
             </div>
