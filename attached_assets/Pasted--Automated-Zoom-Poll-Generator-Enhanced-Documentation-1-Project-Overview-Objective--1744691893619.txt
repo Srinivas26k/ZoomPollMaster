@@ -1,0 +1,308 @@
+# Automated Zoom Poll Generator – Enhanced Documentation
+
+## 1. Project Overview
+
+**Objective:**  
+Develop a completely automated desktop application that:
+
+- **Captures the Live Transcript:**  
+  Uses UI automation (e.g., mouse drag operations) to grab a 10‑minute transcript directly from the Zoom desktop client.
+  
+- **Generates a Poll via ChatGPT:**  
+  Opens a Chrome browser, logs into ChatGPT if necessary, pastes the 10‑minute transcript along with a preset prompt, and receives a generated poll question with answer options.
+  
+- **Posts the Poll Automatically:**  
+  Switches back to Zoom and, using further UI automation, navigates to the poll/quiz interface to post the selected poll.
+  
+- **Handles Credentials:**  
+  Prompts the user—at setup—for Zoom meeting credentials (Meeting ID, Passkey, etc.) and the ChatGPT login information (if required) to ensure a completely hands-off process.
+  
+- **Ensures Logging and Traceability:**  
+  Maintains a detailed log (with timestamps) of all events (e.g., transcript capture, poll generation, UI actions) and allows the log to be downloaded as a text file.
+  
+- **Delivers as a Desktop App:**  
+  Packages the entire solution into a desktop application (e.g., using PyInstaller, Electron with a Python backend, or a similar framework) that users can run without additional manual intervention.
+
+**Key Features:**
+
+- **Live Transcript Capture:**  
+  Uses libraries like PyAutoGUI to perform a simulated mouse drag to copy the transcript from Zoom.
+  
+- **ChatGPT Poll Generation Integration:**  
+  Automates Chrome (using Selenium) to log into ChatGPT (if credentials are required) and automatically sends a 10‑minute transcript using a preset prompt.
+  
+- **Dynamic Poll Generation:**  
+  Retrieves and parses the ChatGPT response to extract one best poll question with four answer options.
+  
+- **UI Automation for Poll Posting:**  
+  Uses further UI automation (PyAutoGUI and OCR if needed) to switch back to Zoom, open the poll/quiz window, and post the poll.
+  
+- **Credential Input and User Prompts:**  
+  On application startup, prompt dialogs are provided to enter:
+  - Zoom credentials (Meeting ID, Passkey, etc.)
+  - ChatGPT login details (if needed)
+  
+- **Comprehensive Logging:**  
+  All actions (with timestamps) are logged and saved to a TXT file that can be downloaded or reviewed later.
+  
+- **Ease of Distribution:**  
+  Distributable as an executable desktop application, ensuring that users have a seamless, fully automated experience without any manual intervention during runtime.
+
+---
+
+## 2. System Architecture
+
+### High-Level Components & Libraries
+
+1. **Live Transcript Capture Module**
+
+   - **Libraries:**  
+     - **PyAutoGUI:** Automate mouse drag operations to capture text.
+     - **pytesseract (optional):** Use OCR to extract transcript text if direct copy is not possible.
+     - **OpenCV (optional):** For advanced image processing if needed.
+   - **Function:**  
+     Capture the 10‑minute transcript directly from Zoom by simulating mouse actions.
+
+2. **ChatGPT Poll Generation Module**
+
+   - **Libraries:**  
+     - **Selenium:** Automate Chrome browser interactions.
+     - **BeautifulSoup (optional):** Parse HTML responses if required.
+   - **Function:**  
+     - Automate login to ChatGPT (if prompted).
+     - Paste the captured transcript with a preset prompt.
+     - Retrieve the generated poll content (question and four answer options).
+
+3. **UI Automation for Poll Posting Module**
+
+   - **Libraries:**  
+     - **PyAutoGUI:** To automate switching windows, navigating the Zoom poll interface, and posting.
+   - **Function:**  
+     Navigate the Zoom UI to open the poll creation interface and post the generated poll.
+
+4. **Orchestration & Scheduling Module**
+
+   - **Libraries:**  
+     - **schedule** or **APScheduler:** Manage task timings.
+   - **Function:**  
+     Schedule tasks:
+     - Every 10 minutes: Capture transcript.
+     - Immediately trigger ChatGPT poll generation.
+     - At a defined interval (e.g., 15 minutes), post the poll.
+
+5. **Credential & UI Prompt Module**
+
+   - **Libraries:**  
+     - **tkinter:** For GUI dialogs to prompt the user for credentials.
+   - **Function:**  
+     Present input dialogs for Zoom credentials (Meeting ID, Passkey, etc.) and ChatGPT login details, and store them securely during the session.
+
+6. **Logging Module**
+
+   - **Libraries:**  
+     - **logging:** To record all actions with timestamps.
+     - **datetime:** For timestamp generation.
+   - **Function:**  
+     Generate a detailed log throughout the workflow that can be saved and exported as a TXT file.
+
+7. **Desktop Packaging**
+
+   - **Tools:**  
+     - **PyInstaller** or similar packaging tool.
+   - **Function:**  
+     Bundle the application into a standalone desktop executable for easy distribution.
+
+### Data Flow Overview
+
+Below is a simple flowchart outlining the process:
+
+```mermaid
+flowchart TD
+    A[Start Application: Prompt for Credentials] --> B[Capture Live Transcript from Zoom]
+    B --> C[Save 10-Minute Transcript]
+    C --> D[Open Chrome Browser with Selenium]
+    D --> E[Login to ChatGPT (if needed)]
+    E --> F[Paste Transcript & Submit Prompt]
+    F --> G[Retrieve ChatGPT Response]
+    G --> H[Parse Generated Poll (Question + Options)]
+    H --> I[Switch to Zoom using PyAutoGUI]
+    I --> J[Open Poll/Quiz Interface in Zoom]
+    J --> K[Post Generated Poll]
+    K --> L[Log All Actions with Timestamps]
+    L --> M[Export Log as TXT File (if required)]
+    M --> N[End / Repeat Scheduled Cycle]
+```
+
+*Note: The above diagram uses Mermaid syntax for clarity. When embedding this in documentation, the diagram can be rendered using a Mermaid live editor or converted to an image for distribution.*
+
+---
+
+## 3. Role-Based Responsibilities
+
+### A. Audio/UI Capture Engineer
+
+**Responsibilities:**
+- Implement UI automation (using PyAutoGUI) to simulate mouse drag actions that copy the live transcript from Zoom.
+- Optionally integrate OCR (pytesseract) for text extraction.
+- Ensure error handling and fallback if the transcript area cannot be detected.
+  
+**Deliverable:**  
+- Function: `capture_transcript() -> str` that returns a 10‑minute transcript segment.
+
+### B. Browser Integration Engineer
+
+**Responsibilities:**
+- Automate Chrome with Selenium.
+- Handle user credentials to log into ChatGPT automatically.
+- Paste transcript and submit the prompt (e.g., “Based on the transcript below, generate one poll question with four engaging answer options”) and capture the response.
+  
+**Deliverable:**  
+- Function: `generate_poll_with_chatgpt(transcript: str) -> dict` that returns a structured JSON-like response containing the poll question and options.
+
+### C. UI Automation Engineer for Poll Posting
+
+**Responsibilities:**
+- Develop UI automation scripts (using PyAutoGUI) to switch back to Zoom.
+- Automate navigation to the poll/quiz interface and post the poll.
+- Implement robust error handling and logging to capture any UI changes or exceptions.
+  
+**Deliverable:**  
+- Function: `post_poll_to_zoom(poll: dict)` that posts the poll directly into the Zoom meeting.
+
+### D. Integration & Orchestration Engineer
+
+**Responsibilities:**
+- Create a main script (`main.py`) that orchestrates the entire workflow.
+- Set up scheduling using the chosen scheduling library.
+- Ensure that all temporary data remains in-memory.
+- Integrate credential prompts via tkinter dialogs.
+  
+**Deliverable:**  
+- A fully coordinated main application script with clear instructions for running on platforms like Replit or as a desktop executable.
+
+### E. QA & Testing Engineer
+
+**Responsibilities:**
+- Develop test cases simulating various meeting scenarios.
+- Validate each module (transcript capture, ChatGPT integration, UI automation, and logging).
+- Prepare unit tests and a manual test plan for end-to-end verification.
+  
+**Deliverable:**  
+- A comprehensive test suite along with documentation for executing tests.
+
+---
+
+## 4. Environment Setup & Execution Instructions
+
+### Environment Requirements
+
+- **Python Version:** 3.8 or above
+
+### Dependencies
+
+- **UI Automation & Browser Control:**  
+  - `PyAutoGUI`
+  - `Selenium`
+  - `pytesseract` (if OCR is required)  
+  - `opencv-python` (optional for advanced image handling)
+
+- **Scheduling:**  
+  - `schedule` or `APScheduler`
+
+- **GUI for Prompts:**  
+  - `tkinter` (usually available in standard Python distributions)
+
+- **Logging:**  
+  - Python’s built-in `logging` and `datetime`
+
+- **Packaging:**  
+  - `PyInstaller` (to create standalone executables)
+
+### Steps to Run the Application
+
+1. **Clone the Repository:**  
+   Create a new project and ensure all dependencies are listed in `requirements.txt`.
+
+2. **Configuration:**  
+   - Run the application to display GUI prompts for:
+     - Zoom credentials (Meeting ID, Passkey, etc.)
+     - Chrome/ChatGPT credentials (if needed)
+   - Adjust any configuration settings in a config file if necessary.
+
+3. **Execution:**  
+   - Run `main.py` to start the scheduler which:
+     - Captures the live transcript every 10 minutes,
+     - Automates the poll generation via ChatGPT,
+     - Posts the poll to Zoom at the designated interval,
+     - Logs each action with timestamps.
+   - Monitor logs in real time and download the log file when needed.
+
+4. **Testing & Debugging:**  
+   - Execute the test suite in the `/tests` directory to validate the functionality of each module.
+
+5. **Packaging as a Desktop App:**  
+   - Use PyInstaller (or a similar tool) to package the Python application into an executable that can be distributed to friends.
+   - Ensure that the executable handles credential prompts and logging seamlessly.
+
+---
+
+## 5. Simple Flowchart Overview
+
+Below is a textual flowchart representation:
+
+```mermaid
+flowchart TD
+    A[Start Application and Prompt for Credentials]
+    B[Capture Live Transcript from Zoom (Mouse Drag + OCR)]
+    C[Save 10-Minute Transcript]
+    D[Launch Chrome with Selenium]
+    E[Login to ChatGPT (if credentials provided)]
+    F[Paste Transcript & Submit Prompt to ChatGPT]
+    G[Retrieve Poll Generation Response]
+    H[Parse Poll (Question + Options)]
+    I[Switch to Zoom via PyAutoGUI]
+    J[Open Poll/Quiz Interface in Zoom]
+    K[Post Generated Poll]
+    L[Log Action with Timestamp]
+    M[Download/Export Log as TXT (if needed)]
+    N[Repeat Scheduled Cycle or End]
+    
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    J --> K
+    K --> L
+    L --> M
+    M --> N
+```
+
+*Note: Use a Mermaid live editor or convert the diagram to an image as needed for visual clarity.*
+
+---
+
+## 6. Final Notes
+
+- **Robustness & Error Handling:**  
+  - Each module must include comprehensive logging and error-recovery procedures.
+  - Consider fallback mechanisms if UI elements are not found or if credentials fail.
+  
+- **Security & Privacy:**  
+  - Ensure that any credential storage during the session is handled in-memory and never written to disk permanently.
+  - Follow best practices for automating login processes (e.g., using secure connections).
+  
+- **Extensibility:**  
+  - The modular design allows future improvements, such as multi-language support or advanced scheduling options.
+  - This design minimizes local resource consumption by offloading natural language processing to ChatGPT's web interface.
+
+- **Distribution:**  
+  - The entire application will be compiled into an executable desktop application, so end users have a plug-and-play interface.
+  - A user-friendly GUI can be added (via frameworks like Tkinter or PyQt) to improve overall user experience.
+
+---
+

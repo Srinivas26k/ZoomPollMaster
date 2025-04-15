@@ -1,0 +1,47 @@
+Develop a high-security, fully automated desktop application based on the provided documentation. The application must be written in Python and packaged as a standalone executable. The core functionalities include:
+> 
+> **1. Transcript Capture:**  
+> - Use PyAutoGUI to simulate mouse drag operations to capture a 10‑minute live transcript from the Zoom desktop app.
+> 
+> **2. Poll Generation via ChatGPT:**  
+> - Automate Chrome using Selenium to open ChatGPT.
+> - Prompt the user for ChatGPT login credentials using a secure tkinter GUI dialog.
+> - Automatically log in (if credentials are necessary), paste the captured transcript into ChatGPT using the prompt:  
+>   “Based on the transcript below, generate one poll question with four engaging answer options,”
+> - Retrieve and parse the response into a structured JSON object.
+> 
+> **3. Poll Posting on Zoom:**  
+> - Use PyAutoGUI to switch back to Zoom.
+> - Automate navigation to the poll/quiz interface.
+> - Post the generated poll directly into the meeting.
+> 
+> **4. Credential Handling:**  
+> - Prompt the user via GUI dialogs (with tkinter) for required credentials:  
+>   - Zoom Meeting ID, Passkey, etc.
+>   - ChatGPT login details (if necessary).
+> 
+> **5. Scheduling & Orchestration:**  
+> - Integrate scheduling (using schedule or APScheduler) to trigger the transcript capture every 10 minutes, then poll generation, and finally poll posting at defined intervals.
+> 
+> **6. Logging:**  
+> - Implement detailed logging with timestamps for every major action.
+> - Provide functionality to export the log as a downloadable TXT file.
+> 
+> **7. Packaging as a Desktop App:**  
+> - Bundle the application into a standalone executable using PyInstaller or a similar tool.
+> - Ensure the final product is user-friendly, with a simple interface and no need for manual intervention.
+> 
+> **Additional Requirements:**  
+> - Follow best practices for high security.
+> - Document each module with inline comments and provide a comprehensive README detailing setup, installation, and execution instructions.
+> 
+> **Deliverables:**  
+> - Function `capture_transcript()` to grab the 10‑minute transcript.
+> - Function `generate_poll_with_chatgpt(transcript: str) -> dict` to obtain and parse the poll.
+> - Function `post_poll_to_zoom(poll: dict)` to post the poll into Zoom.
+> - A main orchestration script (`main.py`).
+> - A credential prompt module using tkinter.
+> - Logging functionality with export to TXT.
+> - A fully packaged executable desktop application.
+> 
+> The final solution must run securely and autonomously, ensuring no human intervention is required once configured. Follow the enhanced documentation provided as the authoritative guide for this project.
