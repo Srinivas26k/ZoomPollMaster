@@ -631,67 +631,51 @@ class ZoomAutomation:
     def click_join_meeting(self):
         """Clicks the 'Join' button and handles the meeting ID input"""
         try:
-            # Method 1: Try image recognition with high confidence
-            self.logger.info("Attempting to find join button using image recognition...")
-            join_button = None
-            
-            try:
-                join_button = pyautogui.locateOnScreen(
-                    'assets/images/zoom_join_meeting_button.png',
-                    confidence=0.8
-                )
-                if join_button:
-                    self.logger.info(f"Found join button at {join_button}")
-                    pyautogui.click(pyautogui.center(join_button))
-                    time.sleep(1)
+            # Look for the join button image
+            join_button = pyautogui.locateOnScreen('assets/images/zoom_join_meeting_button.png', confidence=0.8)
+            if join_button:
+                # Click the center of the button
+                pyautogui.click(pyautogui.center(join_button))
+                logger.info("Successfully clicked join button using image recognition")
+                
+                # Wait for meeting ID dialog box to appear
+                time.sleep(2)
+                meeting_id_box = pyautogui.locateOnScreen('assets/images/zoom_meeting_id_dialog_box.png', confidence=0.8)
+                if meeting_id_box:
+                    # Click the meeting ID input box
+                    pyautogui.click(pyautogui.center(meeting_id_box))
+                    logger.info("Successfully located meeting ID input box")
                     return True
-            except Exception as img_error:
-                self.logger.debug(f"Image recognition attempt failed: {img_error}")
-
-            # Method 2: Try with lower confidence
-            try:
-                self.logger.info("Trying with lower confidence threshold...")
-                join_button = pyautogui.locateOnScreen(
-                    'assets/images/zoom_join_meeting_button.png',
-                    confidence=0.6
-                )
-                if join_button:
-                    self.logger.info(f"Found join button with lower confidence at {join_button}")
-                    pyautogui.click(pyautogui.center(join_button))
-                    time.sleep(1)
-                    return True
-            except Exception as img_error:
-                self.logger.debug(f"Lower confidence attempt failed: {img_error}")
-
-            # Method 3: Try common coordinates
-            self.logger.info("Trying predefined coordinates...")
-            common_coords = [
-                (1107, 423),  # Original coordinate
-                (850, 480),   # Alternative 1
-                (960, 540),   # Center of 1920x1080 screen
-                (480, 270)    # Center of 960x540 screen
-            ]
+                else:
+                    logger.warning("Could not find meeting ID input box")
+                    return False
             
-            for x, y in common_coords:
-                try:
-                    self.logger.info(f"Trying coordinates ({x}, {y})")
-                    pyautogui.moveTo(x, y, duration=0.5)
-                    # Check if the pixel color matches the typical Zoom blue
-                    if pyautogui.pixelMatchesColor(x, y, (0, 122, 255), tolerance=30):
-                        pyautogui.click(x, y)
-                        self.logger.info(f"Successfully clicked join button at ({x}, {y})")
-                        time.sleep(1)
+            logger.warning("Could not find join button image, trying backup method...")
+            # Backup method - try to find the button by searching in likely areas
+            for coords in [(850, 480), (960, 540), (1107, 423)]:
+                pyautogui.moveTo(coords[0], coords[1])
+                time.sleep(0.5)
+                # Take a small screenshot around the current position to check for button-like appearance
+                if pyautogui.pixelMatchesColor(coords[0], coords[1], (0, 122, 255), tolerance=30):
+                    pyautogui.click()
+                    logger.info(f"Clicked potential join button at {coords}")
+                    
+                    # Wait for meeting ID dialog box to appear
+                    time.sleep(2)
+                    meeting_id_box = pyautogui.locateOnScreen('assets/images/zoom_meeting_id_dialog_box.png', confidence=0.8)
+                    if meeting_id_box:
+                        # Click the meeting ID input box
+                        pyautogui.click(pyautogui.center(meeting_id_box))
+                        logger.info("Successfully located meeting ID input box")
                         return True
-                except Exception as coord_error:
-                    self.logger.debug(f"Coordinate attempt ({x}, {y}) failed: {coord_error}")
-                    continue
-
-            # If we get here, all methods failed
-            self.logger.error("All attempts to find join button failed")
-            return False
+                    else:
+                        logger.warning("Could not find meeting ID input box")
+                        return False
             
+            logger.error("Failed to find join button")
+            return False
         except Exception as e:
-            self.logger.error(f"Failed to click Join button: {str(e)}")
+            logger.error(f"Failed to click Join button: {e}")
             return False
     
     def _find_join_button_desktop(self) -> Optional[Tuple[int, int]]:
