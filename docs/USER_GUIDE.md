@@ -1,297 +1,237 @@
 # User Guide - Automated Zoom Poll Generator
 
-This comprehensive guide will help you get the most out of the Automated Zoom Poll Generator application. It covers setup, daily operation, troubleshooting, and advanced features.
+This guide explains how to use the Automated Zoom Poll Generator to automatically create and post polls in your Zoom meetings based on meeting content.
 
-## Table of Contents
+## Quick Start
 
-1. [Getting Started](#getting-started)
-2. [Main Interface](#main-interface)
-3. [Setting Up a Meeting](#setting-up-a-meeting)
-4. [Automated Workflow](#automated-workflow)
-5. [Manual Controls](#manual-controls)
-6. [Working with Desktop Zoom Client](#working-with-desktop-zoom-client)
-7. [Working with Web Zoom Client](#working-with-web-zoom-client)
-8. [Customizing Settings](#customizing-settings)
-9. [Log Management](#log-management)
-10. [Troubleshooting](#troubleshooting)
-11. [Advanced Features](#advanced-features)
+If you're new to the application, follow these steps for a quick start:
 
-## Getting Started
+1. Launch the application
+2. Enter your meeting ID and passcode
+3. Click "Join Meeting"
+4. Wait for automatic poll generation (approximately 10 minutes into the meeting)
+5. Review automatically posted polls (approximately 15 minutes into the meeting)
 
-### First Launch
+## Application Interface
 
-When you first launch the Automated Zoom Poll Generator, you'll be guided through the initial setup process:
+The application comes in two versions:
 
-1. **Welcome Screen**: Click "Next" to begin setup
-2. **Zoom Client Selection**: Choose between Desktop client or Web client
-3. **ChatGPT Login**: Enter your ChatGPT credentials
-4. **Zoom Credentials**: Enter your Zoom credentials (if using web client)
-5. **Final Configuration**: Review and confirm your settings
+1. **Desktop Application** - A standalone executable with graphical user interface
+2. **Terminal Interface** - A command-line interface with rich text display
 
-### Credentials Management
+Both versions provide the same core functionality but with different user interfaces.
 
-Your credentials are stored securely in memory and never written to disk. For security reasons:
+### Desktop Application Interface
 
-- Credentials are automatically cleared after 30 minutes of inactivity
-- You'll need to re-enter credentials after this timeout period
-- No API keys or tokens are used or stored
+The desktop application features a simple graphical interface with the following elements:
 
-## Main Interface
+- **Meeting Connection** section: Join and leave Zoom meetings
+- **Automation Control** section: Start and stop the automated poll generation
+- **Manual Actions** section: Manually trigger transcript capture, poll generation, or poll posting
+- **Status Display**: Shows the current application status
+- **Log Display**: Shows recent activity and application logs
 
-The application's main interface is divided into several key areas:
+### Terminal Interface
 
-### Status Panel
-- Displays the current state of the application (Running/Stopped)
-- Shows next scheduled actions for transcript capture and poll posting
-- Indicates whether you have a current transcript and poll ready
+The terminal interface provides a rich text-based interface with the following sections:
 
-### Control Panel
-- **Start/Stop Button**: Begins or ends the automated workflow
-- **Manual Action Buttons**: Trigger specific actions immediately
-- **Settings Button**: Access configuration options
+- **Status Panel**: Shows the current application state
+- **Log Panel**: Displays recent activity and application logs
+- **Command Input**: Area to enter commands
+- **Help Panel**: Shows available commands
 
-### Log Display
-- Shows real-time application activity
-- Color-coded entries by severity level
-- Time-stamped operations for audit purposes
+## Detailed Usage Instructions
 
-### Status Bar
-- Quick-reference information
-- Current Zoom client mode
-- Application version
+### Joining a Meeting
 
-## Setting Up a Meeting
+#### Desktop Application
 
-Before starting the automated workflow, you need to:
+1. Enter the Zoom meeting ID in the "Meeting ID" field
+2. Enter the meeting passcode in the "Passcode" field
+3. (Optional) Change your display name in the "Display Name" field
+4. Click the "Join Meeting" button
+5. Wait for the application to connect to the meeting
 
-1. Join your Zoom meeting as a host or co-host (polling requires these permissions)
-2. Position your windows appropriately:
-   - For Desktop client: Ensure Zoom is visible on screen
-   - For Web client: Keep the Zoom tab accessible to the application
-3. Enable meeting transcript in Zoom (required for transcript capture)
-4. Make sure you have polling enabled for your Zoom account
+#### Terminal Interface
 
-### Window Positioning Tips
+1. Enter the command: `join`
+2. When prompted, enter the meeting ID
+3. When prompted, enter the meeting passcode
+4. (Optional) When prompted, enter your display name
+5. Wait for the application to connect to the meeting
 
-For optimal performance with the Desktop client:
+### Starting Automated Poll Generation
 
-- Keep the Zoom window visible and unobstructed
-- Avoid overlapping windows that might hide Zoom controls
-- Don't minimize the Zoom window while the automation is running
-- Use a display resolution of at least 1280x720
+#### Desktop Application
 
-## Automated Workflow
+1. After joining a meeting, click the "Start Automation" button
+2. The status display will update to show "Automation: Running"
+3. The application will now:
+   - Capture meeting transcripts every 10 minutes
+   - Generate polls based on transcript content
+   - Post polls to the meeting every 15 minutes
 
-Once started, the application operates autonomously with this workflow:
+#### Terminal Interface
 
-1. **Transcript Capture (Every 10 minutes)**
-   - Activates the Zoom window
-   - Navigates to the transcript area
-   - Captures the last 10 minutes of conversation
-   - Stores the transcript text in memory
+1. After joining a meeting, enter the command: `start`
+2. The status panel will update to show "Automation: Running"
+3. The log panel will show confirmation that automation has started
 
-2. **Poll Generation (After transcript capture)**
-   - Opens ChatGPT in a browser window
-   - Submits the transcript with a specialized prompt
-   - Extracts the generated poll question and options
-   - Parses and prepares the poll data
+### Manual Control
 
-3. **Poll Posting (Every 15 minutes)**
-   - Activates the Zoom window
-   - Navigates to the polling controls
-   - Creates a new poll with the generated question and options
-   - Launches the poll to all participants
+If you want more control over the process, you can manually trigger each step:
 
-The application handles all window switching and UI navigation automatically, allowing you to focus on your meeting.
+#### Desktop Application
 
-## Manual Controls
+1. Click "Capture Transcript" to immediately capture the current meeting transcript
+2. Click "Generate Poll" to create a poll based on the most recent transcript
+3. Click "Post Poll" to post the current poll to the meeting
 
-You can trigger specific actions manually using these controls:
+#### Terminal Interface
 
-### Capture Transcript Now
-- Immediately captures the current meeting transcript
-- Useful when an interesting discussion has just occurred
+1. Enter `capture` to immediately capture the current meeting transcript
+2. Enter `generate` to create a poll based on the most recent transcript
+3. Enter `post` to post the current poll to the meeting
 
-### Generate Poll Now
-- Creates a new poll based on the most recent transcript
-- Use this if you want a fresh poll before the scheduled time
+### Stopping Automation
 
-### Post Poll Now
-- Immediately posts the current poll to the meeting
-- Helpful when you want to drive engagement at a specific moment
+#### Desktop Application
 
-### Export Logs
-- Saves the current application logs to a file
-- Useful for troubleshooting or record-keeping
+1. Click the "Stop Automation" button
+2. The status display will update to show "Automation: Stopped"
 
-## Working with Desktop Zoom Client
+#### Terminal Interface
 
-When using the Desktop Zoom client mode:
+1. Enter the command: `stop`
+2. The status panel will update to show "Automation: Stopped"
 
-### Requirements
-- Zoom must be installed on your computer
-- You must be logged in to Zoom
-- Your display must be active (not sleeping/locked)
+### Leaving a Meeting
 
-### Recommended Settings
-- Enable "Always show meeting controls" in Zoom settings
-- Display Zoom in a consistent location on your screen
-- Use standard UI scaling (100%) for reliable element detection
+#### Desktop Application
 
-### Desktop Client Limitations
-- UI automation may be affected by Zoom updates that change the interface
-- Heavy CPU usage might occasionally slow down the automation
-- Screen recording software may interfere with the automation
+1. Click the "Leave Meeting" button
+2. The application will disconnect from the meeting
 
-## Working with Web Zoom Client
+#### Terminal Interface
 
-When using the Web Zoom client mode:
+1. Enter the command: `leave`
+2. The application will disconnect from the meeting
 
-### Requirements
-- Google Chrome or Chromium browser
-- A Zoom account with web client access
-- Stable internet connection
+## Configuration Options
 
-### Recommended Settings
-- Allow browser notifications if prompted
-- Keep the Zoom tab visible (preferably in its own window)
-- Use standard zoom level (100%) in the browser
+You can customize the application behavior through the configuration file or through the application interface.
 
-### Web Client Advantages
-- More reliable element selection (less affected by OS variations)
-- Works well in headless server environments
-- Can operate alongside other applications more reliably
+### Key Configuration Options
 
-## Customizing Settings
+- **Zoom Client Type**: Choose between "web" for browser-based Zoom or "desktop" for the desktop application
+- **Transcript Interval**: How often to capture meeting transcripts (in minutes)
+- **Poll Interval**: How often to post polls to the meeting (in minutes)
+- **Display Name**: Your name as displayed in Zoom meetings
+- **Auto-Start**: Whether to automatically start automation when joining a meeting
 
-You can customize various aspects of the application:
+### Changing Configuration
 
-### Scheduling
-- Adjust transcript capture interval (default: 10 minutes)
-- Modify poll posting interval (default: 15 minutes)
-- Set custom schedules for specific meeting patterns
+#### Desktop Application
 
-### ChatGPT Prompt
-- Edit the prompt template to generate different types of polls
-- Customize the instructions for more targeted questions
-- Add special directives for formatting or content focus
+1. Click on "Settings" in the menu bar
+2. Adjust the settings as needed
+3. Click "Save" to apply the changes
 
-### UI Automation
-- Adjust timing parameters for slower systems
-- Modify detection confidence thresholds
-- Configure browser window size and position
+#### Terminal Interface
 
-## Log Management
-
-The application maintains detailed logs of all operations:
-
-### Log Levels
-- **INFO**: Normal operations and status changes
-- **WARNING**: Non-critical issues that might need attention
-- **ERROR**: Problems that prevent normal operation
-- **DEBUG**: Detailed technical information (disabled by default)
-
-### Log Export Options
-- **Text File**: Plain text log with timestamp and level
-- **JSON**: Structured data format for programmatic analysis
-- **CSV**: Spreadsheet-compatible format for filtering and sorting
-
-### Log Retention
-- Logs are stored for 7 days by default
-- Older logs are automatically pruned
-- Critical errors are always preserved
+1. Enter the command: `config`
+2. Follow the prompts to update each setting
+3. The changes will be saved automatically
 
 ## Troubleshooting
 
-### Common Issues and Solutions
+If you encounter issues while using the application, try these troubleshooting steps:
 
-#### Application Won't Start
-- Check that Python is installed correctly (if running from source)
-- Verify that you have the correct permissions
-- Look for error messages in the console output
+### Common Issues
 
-#### ChatGPT Login Fails
-- Verify your username and password
-- If you use Multi-Factor Authentication, you may need an app password
-- Check your internet connection
+#### Cannot Join Meeting
 
-#### Transcript Capture Not Working
-- Ensure the meeting transcript is enabled in Zoom
-- Verify that the transcript panel is visible
-- Check if the transcript feature is available in your Zoom plan
+- Verify that the meeting ID and passcode are correct
+- Make sure you have a stable internet connection
+- Check that the meeting is active and accepting participants
+
+#### No Transcript Captured
+
+- Make sure the meeting has closed captions enabled
+- Check that participants are actively speaking in the meeting
+- Try manually capturing the transcript with the "Capture Transcript" button
+
+#### Poll Generation Fails
+
+- Ensure there is enough meeting transcript content for meaningful poll generation
+- Check your ChatGPT integration settings
+- Try manually generating a poll with the "Generate Poll" button
 
 #### Poll Posting Fails
-- Confirm you have host/co-host privileges
-- Verify polling is enabled for your Zoom account
-- Check if the Zoom interface has been updated recently
 
-#### Automation Seems Slow or Unresponsive
-- Reduce other CPU-intensive applications
-- Try switching between Desktop and Web client modes
-- Adjust the timing parameters in settings
+- Verify that you have host or co-host permissions in the meeting
+- Make sure polling is enabled for the meeting
+- Try manually posting a poll with the "Post Poll" button
 
-### Diagnostic Tools
+### Viewing Logs
 
-#### Log Analysis
-- Enable DEBUG level logging for detailed information
-- Look for pattern of errors before failure points
-- Check timestamps to identify sequence issues
+For more detailed information about application activity:
 
-#### Test Mode
-- Use the built-in test mode to verify component functionality
-- Run individual actions manually to isolate problems
-- Verify each step in the workflow independently
+#### Desktop Application
+
+1. Click "Export Logs" to save the log file
+2. Open the saved log file with a text editor to view detailed information
+
+#### Terminal Interface
+
+1. Enter the command: `status` to see more detailed application state
+2. Review the log panel for recent activity
+3. For full logs, check the `app.log` file in the application directory
+
+## Best Practices
+
+To get the most out of the Automated Zoom Poll Generator:
+
+1. **Start Early**: Join the meeting a few minutes before it begins to allow the application to set up properly
+2. **Enable Captions**: Make sure closed captioning is enabled in the meeting for transcript capture
+3. **Active Discussion**: The quality of generated polls depends on the meeting content; more active discussion leads to better polls
+4. **Regular Checks**: Occasionally review the application status to ensure it's working as expected
+5. **Provide Feedback**: If the generated polls aren't relevant, try adjusting the capture interval or prompt settings
 
 ## Advanced Features
 
-### Keyboard Shortcuts
-- **Ctrl+S**: Start/Stop automation
-- **Ctrl+C**: Capture transcript now
-- **Ctrl+G**: Generate poll now
-- **Ctrl+P**: Post poll now
-- **Ctrl+L**: Open log viewer
-- **Ctrl+Q**: Quit application
-
 ### Command Line Options
-- `--headless`: Run without GUI (for server deployments)
-- `--debug`: Enable debug logging
-- `--config=<path>`: Use custom configuration file
-- `--web-mode`: Force web interface mode
-- `--desktop-mode`: Force desktop application mode
 
-### Custom Poll Templates
-Create specialized poll templates for different meeting types:
+When launching the application from the command line, you can use these options:
 
-1. Create a file named `custom_templates.json`
-2. Define templates with custom prompts
-3. Select templates from the settings menu
-
-Example template structure:
-```json
-{
-  "templates": [
-    {
-      "name": "Technical Discussion",
-      "prompt": "Based on this technical discussion, create a poll about the most challenging aspect mentioned."
-    },
-    {
-      "name": "Brainstorming",
-      "prompt": "From this brainstorming session, create a poll to prioritize the top ideas."
-    }
-  ]
-}
+```
+python main_app.py --meeting "123456789" --passcode "password" --auto-start
 ```
 
-### Integration with Meeting Analytics
-If you use meeting analytics platforms, you can:
+- `--meeting`: Automatically join the specified meeting ID
+- `--passcode`: Use the specified meeting passcode
+- `--auto-start`: Automatically start automation after joining
+- `--cli`: Use the terminal interface instead of the graphical interface
 
-1. Export poll results from Zoom
-2. Use the application logs to correlate poll timing with transcript segments
-3. Analyze engagement patterns throughout meetings
+### Custom Poll Templates
 
-### Multi-Meeting Support
-For advanced users, the application can be configured to:
+Advanced users can customize the poll generation prompts in the configuration file:
 
-1. Monitor multiple Zoom meetings simultaneously
-2. Use separate browser profiles for different ChatGPT sessions
-3. Maintain independent schedules for each meeting
+1. Open `config.json` in a text editor
+2. Locate the `poll_generation_prompt` setting
+3. Modify the prompt template to suit your needs
+4. Save the file and restart the application
+
+## Additional Resources
+
+- [Installation Guide](INSTALLATION.md): Detailed installation instructions
+- [GitHub Repository](https://github.com/yourusername/automated-zoom-poll-generator): Source code and latest releases
+- [Technical Documentation](TECHNICAL.md): Detailed technical information for developers
+
+## Feedback and Support
+
+If you encounter issues or have suggestions for improvement:
+
+1. Submit an issue on the [GitHub Issues](https://github.com/yourusername/automated-zoom-poll-generator/issues) page
+2. Include detailed information about the problem and steps to reproduce it
+3. Attach log files if applicable

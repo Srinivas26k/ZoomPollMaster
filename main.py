@@ -1,7 +1,27 @@
 """
 Automated Zoom Poll Generator
 Main application module that orchestrates the workflow.
+
+Usage:
+1. Import and instantiate the ZoomPollGenerator class
+2. Call setup() to perform initial setup
+3. Call run() to start the application
+4. Use perform_transcript_capture(), perform_poll_generation(), 
+   and perform_poll_posting() for manual control
+5. Call start() and stop() to control the automated workflow
 """
+
+import os
+import sys
+import time
+import json
+import logging
+import argparse
+import threading
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Callable
+from dotenv import load_dotenv
 
 # Import required modules
 import os
