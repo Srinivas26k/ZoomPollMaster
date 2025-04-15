@@ -27,6 +27,7 @@ logger = get_logger()
 class ChatGPTIntegration:
     """
     Handles integration with ChatGPT using Selenium browser automation.
+    Direct browser automation without using OpenAI API.
     """
     
     def __init__(self):
@@ -51,6 +52,13 @@ class ChatGPTIntegration:
             chrome_options.add_argument("--start-maximized")
             chrome_options.add_argument("--disable-notifications")
             chrome_options.add_argument("--disable-popup-blocking")
+            
+            # Add headless mode for server environments
+            if self._is_server_environment():
+                chrome_options.add_argument("--headless")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
             
             self.driver = webdriver.Chrome(options=chrome_options)
             logger.info("Chrome browser initialized successfully")
@@ -165,8 +173,11 @@ class ChatGPTIntegration:
             )
             chat_input.clear()
             
-            # Enter the prompt
-            chat_input.send_keys(full_prompt)
+            # Enter the prompt (handling long text)
+            for chunk in self._chunk_text(full_prompt, 1000):
+                chat_input.send_keys(chunk)
+                time.sleep(0.5)
+            
             time.sleep(WAIT_SHORT)
             
             # Send the message (hit Enter)
@@ -177,7 +188,7 @@ class ChatGPTIntegration:
             
             # Wait for the loading spinner to disappear or timeout
             try:
-                WebDriverWait(self.driver, WAIT_LONG).until_not(
+                WebDriverWait(self.driver, WAIT_LONG*2).until_not(
                     EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'result-streaming')]"))
                 )
             except TimeoutException:
@@ -255,6 +266,10 @@ class ChatGPTIntegration:
             # Extract question using regex
             question_match = re.search(r"Question:?\s*(.+?)(?:\n|$)", response_text)
             if not question_match:
+                # Try alternative format
+                question_match = re.search(r"Poll Question:?\s*(.+?)(?:\n|$)", response_text)
+                
+            if not question_match:
                 logger.error("Could not find question in ChatGPT response")
                 return None
                 
@@ -267,6 +282,10 @@ class ChatGPTIntegration:
                 # Try alternative format (A, B, C, D)
                 option_matches = re.findall(r"[A-D][.):]\s*(.+?)(?:\n|$)", response_text)
             
+            if len(option_matches) < 2:
+                # Try another format common in ChatGPT responses
+                option_matches = re.findall(r"\d+[.):]\s*(.+?)(?:\n|$)", response_text)
+                
             if len(option_matches) < 2:
                 logger.error(f"Not enough options found in ChatGPT response (found {len(option_matches)})")
                 return None
@@ -282,3 +301,34 @@ class ChatGPTIntegration:
         except Exception as e:
             logger.error(f"Error parsing ChatGPT response: {str(e)}")
             return None
+    
+    def _is_server_environment(self) -> bool:
+        """
+        Detect if running in a server environment.
+        
+        Returns:
+            Boolean indicating whether running in a server/CI environment
+        """
+        import os
+        # Check common environment variables set in server/CI environments
+        return any([
+            os.environ.get('CI') == 'true',
+            os.environ.get('REPLIT') == 'true',
+            os.environ.get('GITHUB_ACTIONS') == 'true',
+            os.environ.get('GITLAB_CI') == 'true',
+            os.environ.get('TRAVIS') == 'true',
+            os.environ.get('JENKINS_URL') is not None,
+        ])
+    
+    def _chunk_text(self, text, chunk_size=1000):
+        """
+        Split long text into manageable chunks.
+        
+        Args:
+            text: The text to chunk
+            chunk_size: Maximum size of each chunk
+            
+        Returns:
+            List of text chunks
+        """
+        return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
