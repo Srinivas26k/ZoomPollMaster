@@ -22,7 +22,7 @@ def test_zoom_automation():
             logging.info("Successfully clicked join button")
             
             # Test meeting ID
-            test_meeting_id = "123 456 7890"
+            test_meeting_id = "88646363911"
             test_passcode = "password123"
             
             # Type meeting ID
