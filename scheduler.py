@@ -3,8 +3,6 @@ Scheduler Module for the Automated Zoom Poll Generator.
 Handles scheduling of regular tasks such as transcript capture and poll posting.
 """
 
-import time
-import threading
 import logging
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -12,7 +10,14 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 
 from logger import get_logger
-from config import TRANSCRIPT_CAPTURE_INTERVAL, POLL_POSTING_INTERVAL
+
+# Import config or use default values if not available
+try:
+    from config import TRANSCRIPT_CAPTURE_INTERVAL, POLL_POSTING_INTERVAL
+except ImportError:
+    # Default values if config module is not available
+    TRANSCRIPT_CAPTURE_INTERVAL = 10 * 60  # 10 minutes in seconds
+    POLL_POSTING_INTERVAL = 15 * 60  # 15 minutes in seconds
 
 logger = get_logger()
 
@@ -25,42 +30,48 @@ class TaskScheduler:
     def __init__(self):
         """Initialize the task scheduler."""
         self.scheduler = BackgroundScheduler()
-        self.is_running = False
-        self.job_ids = {}
-        self.last_transcript_time = None
-        self.last_poll_time = None
+        self.transcript_job = None
+        self.poll_job = None
+        self.one_time_jobs = {}
         logger.info("Task scheduler initialized")
     
     def start(self):
         """Start the scheduler."""
-        if not self.is_running:
-            try:
-                self.scheduler.start()
-                self.is_running = True
-                logger.info("Scheduler started")
+        try:
+            # Prevent starting an already running scheduler
+            if self.scheduler.running:
+                logger.warning("Scheduler is already running")
                 return True
-            except Exception as e:
-                logger.error(f"Error starting scheduler: {str(e)}")
-                return False
-        else:
-            logger.warning("Scheduler already running")
+                
+            self.scheduler.start()
+            logger.info("Scheduler started")
             return True
+            
+        except Exception as e:
+            logger.error(f"Error starting scheduler: {str(e)}")
+            return False
     
     def stop(self):
         """Stop the scheduler and all scheduled jobs."""
-        if self.is_running:
-            try:
+        try:
+            # Only attempt to shut down a running scheduler
+            if self.scheduler.running:
                 self.scheduler.shutdown()
-                self.is_running = False
-                self.job_ids = {}
                 logger.info("Scheduler stopped")
-                return True
-            except Exception as e:
-                logger.error(f"Error stopping scheduler: {str(e)}")
-                return False
-        else:
-            logger.warning("Scheduler not running")
+                
+                # Reset job references
+                self.transcript_job = None
+                self.poll_job = None
+                self.one_time_jobs = {}
+                
+            else:
+                logger.warning("Scheduler is not running")
+                
             return True
+            
+        except Exception as e:
+            logger.error(f"Error stopping scheduler: {str(e)}")
+            return False
     
     def schedule_transcript_capture(self, capture_func, interval=None):
         """
@@ -70,27 +81,22 @@ class TaskScheduler:
             capture_func: Function to call for transcript capture
             interval: Interval in seconds (defaults to config value)
         """
-        if not self.is_running:
-            self.start()
-        
-        if not interval:
+        if interval is None:
             interval = TRANSCRIPT_CAPTURE_INTERVAL
-        
-        try:
-            # Remove existing job if present
-            if 'transcript_capture' in self.job_ids:
-                self.scheduler.remove_job(self.job_ids['transcript_capture'])
             
-            # Add new job
-            job = self.scheduler.add_job(
+        try:
+            # Remove existing job if any
+            if self.transcript_job:
+                self.scheduler.remove_job(self.transcript_job.id)
+                
+            # Add new job with the specified interval
+            self.transcript_job = self.scheduler.add_job(
                 capture_func,
                 IntervalTrigger(seconds=interval),
-                id='transcript_capture_job',
+                id='transcript_capture',
+                name='Transcript Capture',
                 replace_existing=True
             )
-            
-            self.job_ids['transcript_capture'] = job.id
-            self.last_transcript_time = datetime.now()
             
             logger.info(f"Scheduled transcript capture every {interval} seconds")
             return True
@@ -107,27 +113,22 @@ class TaskScheduler:
             post_func: Function to call for poll posting
             interval: Interval in seconds (defaults to config value)
         """
-        if not self.is_running:
-            self.start()
-        
-        if not interval:
+        if interval is None:
             interval = POLL_POSTING_INTERVAL
-        
-        try:
-            # Remove existing job if present
-            if 'poll_posting' in self.job_ids:
-                self.scheduler.remove_job(self.job_ids['poll_posting'])
             
-            # Add new job
-            job = self.scheduler.add_job(
+        try:
+            # Remove existing job if any
+            if self.poll_job:
+                self.scheduler.remove_job(self.poll_job.id)
+                
+            # Add new job with the specified interval
+            self.poll_job = self.scheduler.add_job(
                 post_func,
                 IntervalTrigger(seconds=interval),
-                id='poll_posting_job',
+                id='poll_posting',
+                name='Poll Posting',
                 replace_existing=True
             )
-            
-            self.job_ids['poll_posting'] = job.id
-            self.last_poll_time = datetime.now()
             
             logger.info(f"Scheduled poll posting every {interval} seconds")
             return True
@@ -145,26 +146,26 @@ class TaskScheduler:
             delay_seconds: Delay in seconds before execution
             task_name: Optional name for the task
         """
-        if not self.is_running:
-            self.start()
-        
-        task_id = task_name or f"one_time_{int(time.time())}"
-        
+        if task_name is None:
+            task_name = f"one_time_task_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
         try:
-            # Calculate run time
+            # Calculate the execution time
             run_time = datetime.now() + timedelta(seconds=delay_seconds)
             
-            # Add the job
+            # Add one-time job with the specified delay
             job = self.scheduler.add_job(
                 task_func,
                 DateTrigger(run_date=run_time),
-                id=task_id,
+                id=task_name,
+                name=task_name,
                 replace_existing=True
             )
             
-            self.job_ids[task_id] = job.id
+            # Store reference to the job
+            self.one_time_jobs[task_name] = job
             
-            logger.info(f"Scheduled one-time task '{task_id}' in {delay_seconds} seconds")
+            logger.info(f"Scheduled one-time task '{task_name}' to run in {delay_seconds} seconds")
             return True
             
         except Exception as e:
@@ -181,12 +182,16 @@ class TaskScheduler:
         Returns:
             Datetime of next run, or None if job not scheduled
         """
-        if not self.is_running or job_type not in self.job_ids:
-            return None
-        
         try:
-            job = self.scheduler.get_job(self.job_ids[job_type])
-            return job.next_run_time if job else None
+            if job_type == 'transcript_capture' and self.transcript_job:
+                return self.transcript_job.next_run_time
+            elif job_type == 'poll_posting' and self.poll_job:
+                return self.poll_job.next_run_time
+            elif job_type in self.one_time_jobs:
+                return self.one_time_jobs[job_type].next_run_time
+            else:
+                return None
+                
         except Exception as e:
             logger.error(f"Error getting next run time: {str(e)}")
             return None
@@ -198,18 +203,38 @@ class TaskScheduler:
         Returns:
             Dict containing scheduler status information
         """
-        status = {
-            "is_running": self.is_running,
-            "scheduled_jobs": list(self.job_ids.keys()),
-            "last_transcript_time": self.last_transcript_time,
-            "last_poll_time": self.last_poll_time
-        }
-        
-        # Add next run times if available
-        if self.is_running:
-            for job_type in self.job_ids:
-                next_run = self.get_next_run_time(job_type)
-                if next_run:
-                    status[f"next_{job_type}_time"] = next_run
-        
-        return status
+        try:
+            status = {
+                "scheduler_running": self.scheduler.running,
+                "transcript_job_scheduled": self.transcript_job is not None,
+                "poll_job_scheduled": self.poll_job is not None,
+                "one_time_jobs_count": len(self.one_time_jobs)
+            }
+            
+            # Add next run times if available
+            if self.transcript_job:
+                next_capture = self.transcript_job.next_run_time
+                status["next_transcript_capture"] = next_capture.strftime("%H:%M:%S") if next_capture else "Not scheduled"
+            
+            if self.poll_job:
+                next_poll = self.poll_job.next_run_time
+                status["next_poll_posting"] = next_poll.strftime("%H:%M:%S") if next_poll else "Not scheduled"
+            
+            # Add list of one-time jobs
+            one_time_job_status = {}
+            for name, job in self.one_time_jobs.items():
+                if job.next_run_time:
+                    one_time_job_status[name] = job.next_run_time.strftime("%H:%M:%S")
+                else:
+                    one_time_job_status[name] = "Completed or removed"
+            
+            status["one_time_jobs"] = one_time_job_status
+            
+            return status
+            
+        except Exception as e:
+            logger.error(f"Error getting scheduler status: {str(e)}")
+            return {
+                "scheduler_running": False,
+                "error": str(e)
+            }

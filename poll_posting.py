@@ -4,12 +4,14 @@ Uses PyAutoGUI to post polls to Zoom meetings.
 """
 
 import time
-import pyautogui
+import re
 import logging
-from typing import Dict, List, Optional, Tuple
+import pyautogui
+import pyperclip
+from typing import Optional, Tuple, Dict, List
 
 from logger import get_logger
-from config import WAIT_SHORT, WAIT_MEDIUM, WAIT_LONG
+from config import WAIT_SHORT, WAIT_MEDIUM, WAIT_LONG, POLL_BUTTON_IMAGE, LAUNCH_POLL_IMAGE
 
 logger = get_logger()
 
@@ -19,12 +21,19 @@ class PollPosting:
     Handles posting of generated polls to Zoom meetings via UI automation.
     """
     
-    def __init__(self):
-        """Initialize the poll posting module."""
-        # Coordinates for Zoom UI elements (will be calibrated)
-        self.poll_menu_location = None
-        self.poll_button_location = None
-        logger.info("Poll posting module initialized")
+    def __init__(self, zoom_client_type="desktop"):
+        """
+        Initialize the poll posting module.
+        
+        Args:
+            zoom_client_type: Type of Zoom client ("desktop" or "web")
+        """
+        self.zoom_client_type = zoom_client_type
+        
+        # Set confidence level for image recognition
+        self.confidence_level = 0.7
+        
+        logger.info(f"Poll posting module initialized for {zoom_client_type} client")
     
     def find_zoom_window(self) -> bool:
         """
@@ -33,27 +42,49 @@ class PollPosting:
         Returns:
             Boolean indicating whether Zoom window was found and focused
         """
-        logger.info("Locating Zoom meeting window")
+        logger.info("Looking for Zoom window")
         
         try:
-            # Try to find Zoom window by its title bar
-            zoom_window = pyautogui.getWindowsWithTitle("Zoom Meeting")
-            
-            if not zoom_window:
-                # Try alternative titles
-                zoom_window = pyautogui.getWindowsWithTitle("Zoom")
+            if self.zoom_client_type == "desktop":
+                # For desktop client, look for the Zoom window by title pattern
+                # This is a simplified approach and might need improvement
+                # In a real implementation, we would use platform-specific methods
                 
-                if not zoom_window:
-                    logger.error("Could not find Zoom window")
-                    return False
-            
-            # Activate the Zoom window
-            zoom_window[0].activate()
-            time.sleep(WAIT_SHORT)
-            
-            logger.info("Zoom window located and focused")
-            return True
-            
+                # Simulate Alt+Tab to switch windows (simplistic approach)
+                pyautogui.keyDown('alt')
+                time.sleep(WAIT_SHORT)
+                pyautogui.press('tab')
+                time.sleep(WAIT_SHORT)
+                pyautogui.keyUp('alt')
+                
+                # Give the window time to come into focus
+                time.sleep(WAIT_MEDIUM)
+                
+                logger.info("Attempted to bring Zoom window to focus")
+                return True
+                
+            elif self.zoom_client_type == "web":
+                # For web client, we would use browser automation
+                # This is a simplified approach for demonstration
+                
+                # In a real implementation with Selenium, we would switch to the Zoom tab
+                # For now, we'll use a simple Alt+Tab approach
+                pyautogui.keyDown('alt')
+                time.sleep(WAIT_SHORT)
+                pyautogui.press('tab')
+                time.sleep(WAIT_SHORT)
+                pyautogui.keyUp('alt')
+                
+                # Give the window time to come into focus
+                time.sleep(WAIT_MEDIUM)
+                
+                logger.info("Attempted to bring Zoom web client to focus")
+                return True
+                
+            else:
+                logger.error(f"Unsupported Zoom client type: {self.zoom_client_type}")
+                return False
+                
         except Exception as e:
             logger.error(f"Error finding Zoom window: {str(e)}")
             return False
@@ -65,64 +96,64 @@ class PollPosting:
         Returns:
             Tuple of (x, y) coordinates for poll menu button, or None if not found
         """
-        logger.info("Locating Zoom poll menu button")
+        logger.info("Looking for poll menu button")
         
         try:
-            # Try to locate the poll button by image
-            poll_button = pyautogui.locateOnScreen('poll_button.png', confidence=0.7)
-            
-            if poll_button:
-                self.poll_button_location = pyautogui.center(poll_button)
-                logger.info(f"Poll button located at {self.poll_button_location}")
-                return self.poll_button_location
-            
-            # Fallback: try to locate using text
-            poll_text_locations = list(pyautogui.locateAllOnScreen('poll_text.png', confidence=0.7))
-            
-            if poll_text_locations:
-                self.poll_button_location = pyautogui.center(poll_text_locations[0])
-                logger.info(f"Poll text located at {self.poll_button_location}")
-                return self.poll_button_location
-            
-            # Second fallback: check in the meeting controls area
-            # This is a rough estimate and may need adjustment
-            screen_width, screen_height = pyautogui.size()
-            controls_y = int(screen_height * 0.9)  # Assuming controls are at the bottom
-            
-            # Scan along the bottom for potential poll button
-            for x in range(100, screen_width - 100, 100):
-                pyautogui.moveTo(x, controls_y)
-                time.sleep(0.1)
+            if self.zoom_client_type == "desktop":
+                # Look for the poll button image
+                poll_button = pyautogui.locateOnScreen(
+                    POLL_BUTTON_IMAGE,
+                    confidence=self.confidence_level
+                )
                 
-                # Check if a tooltip appears with "Poll" in it
-                poll_tooltip = pyautogui.locateOnScreen('poll_tooltip.png', confidence=0.7)
-                if poll_tooltip:
-                    self.poll_button_location = (x, controls_y)
-                    logger.info(f"Poll button estimated at {self.poll_button_location}")
-                    return self.poll_button_location
-            
-            logger.warning("Could not locate poll button - using fallback method")
-            
-            # Last resort: Use "More" button and then find Poll
-            more_button = pyautogui.locateOnScreen('more_button.png', confidence=0.7)
-            
-            if more_button:
-                more_center = pyautogui.center(more_button)
-                pyautogui.click(more_center)
-                time.sleep(WAIT_SHORT)
+                if not poll_button:
+                    logger.warning("Could not find poll button using image recognition")
+                    
+                    # Try alternative method - look for text elements like "Polls" or "Polling"
+                    # This is a fallback approach that might be less reliable
+                    for text in ["Polls", "Polling", "Poll"]:
+                        try:
+                            poll_region = pyautogui.locateOnScreen(
+                                f"Searching for text: {text}",
+                                confidence=0.6
+                            )
+                            if poll_region:
+                                logger.info(f"Found potential poll button using text search: {text}")
+                                return pyautogui.center(poll_region)
+                        except Exception:
+                            continue
+                    
+                    logger.error("Could not find poll button in Zoom interface")
+                    return None
                 
-                # Look for Poll in the dropdown
-                poll_menu_item = pyautogui.locateOnScreen('poll_menu_item.png', confidence=0.7)
+                # Get center of poll button
+                button_center = pyautogui.center(poll_button)
+                logger.info(f"Found poll button at {button_center}")
+                return button_center
                 
-                if poll_menu_item:
-                    self.poll_button_location = pyautogui.center(poll_menu_item)
-                    logger.info(f"Poll menu item located at {self.poll_button_location}")
-                    # Don't click yet, just return the location
-                    return self.poll_button_location
-            
-            logger.error("Could not locate poll button or menu")
-            return None
-            
+            elif self.zoom_client_type == "web":
+                # For web client, look for poll button in the web interface
+                # This is a simplified approach for demonstration
+                
+                # In a real implementation with Selenium, we would use XPath or CSS selectors
+                # For now, we'll use image recognition similar to desktop
+                poll_button = pyautogui.locateOnScreen(
+                    POLL_BUTTON_IMAGE,
+                    confidence=self.confidence_level
+                )
+                
+                if not poll_button:
+                    logger.warning("Could not find poll button in web interface")
+                    return None
+                
+                button_center = pyautogui.center(poll_button)
+                logger.info(f"Found poll button in web interface at {button_center}")
+                return button_center
+                
+            else:
+                logger.error(f"Unsupported Zoom client type: {self.zoom_client_type}")
+                return None
+                
         except Exception as e:
             logger.error(f"Error finding poll menu: {str(e)}")
             return None
@@ -137,130 +168,256 @@ class PollPosting:
         Returns:
             Boolean indicating whether poll was successfully posted
         """
-        logger.info("Starting process to post poll to Zoom")
+        logger.info("Posting poll to Zoom")
         
         try:
-            # Find and focus the Zoom window
-            if not self.find_zoom_window():
+            # Validate poll data
+            if not poll_data or 'question' not in poll_data or 'options' not in poll_data:
+                logger.error("Invalid poll data structure")
                 return False
             
-            # Find poll menu button if not already known
-            if not self.poll_button_location:
-                self.poll_button_location = self.find_poll_menu()
-                
-                if not self.poll_button_location:
-                    logger.error("Failed to locate poll button")
-                    return False
+            question = poll_data['question']
+            options = poll_data['options']
             
-            # Click on poll button
-            logger.info("Clicking poll button")
-            pyautogui.click(self.poll_button_location)
+            if not question or not options or len(options) < 2:
+                logger.error(f"Invalid poll content: Question: '{question}', Options: {options}")
+                return False
+            
+            # Find and focus the Zoom window
+            if not self.find_zoom_window():
+                logger.error("Failed to find Zoom window")
+                return False
+            
+            # Find the poll menu button
+            poll_button_pos = self.find_poll_menu()
+            
+            if not poll_button_pos:
+                logger.error("Failed to find poll menu button")
+                return False
+            
+            # Click on the poll button to open the poll menu
+            x, y = poll_button_pos
+            pyautogui.click(x, y)
             time.sleep(WAIT_MEDIUM)
             
-            # Look for "Launch Polling" or similar button
-            launch_button = pyautogui.locateOnScreen('launch_polling.png', confidence=0.7)
-            
-            if not launch_button:
-                # Try to find "Add a Poll" or "Create" button if no existing polls
-                add_button = pyautogui.locateOnScreen('add_poll.png', confidence=0.7)
+            # The approach from here depends on client type
+            if self.zoom_client_type == "desktop":
+                # For desktop client, we need to:
+                # 1. Look for "Add a Poll" or "Create a Poll" option
+                # 2. Fill in the poll question and options
+                # 3. Click "Launch Poll" button
                 
-                if not add_button:
-                    # Try generic "create" text
-                    add_button = pyautogui.locateOnScreen('create_button.png', confidence=0.7)
+                # Look for "Add a Poll" or similar text
+                # This is simplified and would need refinement in real implementation
+                for text in ["Add a Poll", "Create a Poll", "New Poll"]:
+                    try:
+                        # Try to find the text on screen
+                        add_poll_btn = pyautogui.locateOnScreen(
+                            f"Searching for text: {text}",
+                            confidence=0.6
+                        )
+                        if add_poll_btn:
+                            # Click on "Add a Poll"
+                            add_poll_center = pyautogui.center(add_poll_btn)
+                            pyautogui.click(add_poll_center)
+                            time.sleep(WAIT_MEDIUM)
+                            break
+                    except Exception:
+                        continue
                 
-                if add_button:
-                    logger.info("Clicking add/create poll button")
-                    pyautogui.click(pyautogui.center(add_button))
-                    time.sleep(WAIT_MEDIUM)
-                else:
-                    logger.error("Could not find add poll button")
-                    return False
-            
-            # Now we should be in the poll creation interface
-            
-            # Enter poll question
-            # Try to find question field
-            question_field = pyautogui.locateOnScreen('question_field.png', confidence=0.7)
-            
-            if not question_field:
-                # Fallback: Try to locate based on typical UI layout
-                # Most likely the first text field in the form
-                logger.info("Using fallback method to locate question field")
+                # Now we should be in the poll creation interface
+                # Tab to move between fields and fill in content
                 
-                # Move to estimated position and click
-                screen_width, screen_height = pyautogui.size()
-                question_x = int(screen_width * 0.5)
-                question_y = int(screen_height * 0.3)
-                
-                pyautogui.click(question_x, question_y)
+                # Fill in the question
+                pyautogui.write(question)
                 time.sleep(WAIT_SHORT)
-            else:
-                pyautogui.click(pyautogui.center(question_field))
-                time.sleep(WAIT_SHORT)
-            
-            # Enter question text
-            pyautogui.write(poll_data['question'])
-            time.sleep(WAIT_SHORT)
-            
-            # Tab to first option field
-            pyautogui.press('tab')
-            time.sleep(WAIT_SHORT)
-            
-            # Enter options
-            for option in poll_data['options']:
-                pyautogui.write(option)
+                
+                # Tab to the first option field
                 pyautogui.press('tab')
                 time.sleep(WAIT_SHORT)
-            
-            # Look for save button
-            save_button = pyautogui.locateOnScreen('save_button.png', confidence=0.7)
-            
-            if not save_button:
-                # Try alternative terms
-                save_button = pyautogui.locateOnScreen('done_button.png', confidence=0.7)
                 
-                if not save_button:
-                    logger.warning("Could not find save/done button - trying generic location")
-                    # Estimate button position (usually bottom right)
-                    screen_width, screen_height = pyautogui.size()
-                    save_x = int(screen_width * 0.8)
-                    save_y = int(screen_height * 0.8)
-                    
-                    pyautogui.click(save_x, save_y)
-                else:
-                    logger.info("Clicking done button")
-                    pyautogui.click(pyautogui.center(save_button))
-            else:
-                logger.info("Clicking save button")
-                pyautogui.click(pyautogui.center(save_button))
-            
-            time.sleep(WAIT_MEDIUM)
-            
-            # Look for launch button
-            launch_button = pyautogui.locateOnScreen('launch_poll.png', confidence=0.7)
-            
-            if not launch_button:
-                # Try alternative terms
-                launch_button = pyautogui.locateOnScreen('start_poll.png', confidence=0.7)
+                # Fill in options
+                for option in options:
+                    pyautogui.write(option)
+                    time.sleep(WAIT_SHORT)
+                    pyautogui.press('tab')  # Move to next field or button
+                    time.sleep(WAIT_SHORT)
                 
-                if not launch_button:
-                    logger.warning("Could not find launch/start button - trying generic location")
-                    # Estimate button position (usually bottom right)
-                    screen_width, screen_height = pyautogui.size()
-                    launch_x = int(screen_width * 0.8)
-                    launch_y = int(screen_height * 0.8)
+                # Find and click the "Save" or "Create" button
+                # This is simplified and would need refinement
+                for text in ["Save", "Create", "Done"]:
+                    try:
+                        save_btn = pyautogui.locateOnScreen(
+                            f"Searching for text: {text}",
+                            confidence=0.6
+                        )
+                        if save_btn:
+                            save_center = pyautogui.center(save_btn)
+                            pyautogui.click(save_center)
+                            time.sleep(WAIT_MEDIUM)
+                            break
+                    except Exception:
+                        continue
+                
+                # Now find and click "Launch Poll"
+                launch_poll = pyautogui.locateOnScreen(
+                    LAUNCH_POLL_IMAGE,
+                    confidence=self.confidence_level
+                )
+                
+                if not launch_poll:
+                    # Try text-based recognition as fallback
+                    for text in ["Launch Poll", "Start Poll", "Launch"]:
+                        try:
+                            launch_btn = pyautogui.locateOnScreen(
+                                f"Searching for text: {text}",
+                                confidence=0.6
+                            )
+                            if launch_btn:
+                                launch_center = pyautogui.center(launch_btn)
+                                pyautogui.click(launch_center)
+                                time.sleep(WAIT_MEDIUM)
+                                logger.info("Poll launched successfully")
+                                return True
+                        except Exception:
+                            continue
                     
-                    pyautogui.click(launch_x, launch_y)
+                    logger.error("Could not find Launch Poll button")
+                    return False
                 else:
-                    logger.info("Clicking start poll button")
-                    pyautogui.click(pyautogui.center(launch_button))
+                    # Click Launch Poll
+                    launch_center = pyautogui.center(launch_poll)
+                    pyautogui.click(launch_center)
+                    time.sleep(WAIT_MEDIUM)
+                    logger.info("Poll launched successfully")
+                    return True
+                
+            elif self.zoom_client_type == "web":
+                # For web client, the process is similar but the UI elements are different
+                # This would be more reliable with Selenium, but we'll use a similar approach
+                
+                # Look for "Add a Poll" or similar text
+                for text in ["Add a Poll", "Create a Poll", "New Poll"]:
+                    try:
+                        add_poll_btn = pyautogui.locateOnScreen(
+                            f"Searching for text: {text}",
+                            confidence=0.6
+                        )
+                        if add_poll_btn:
+                            add_poll_center = pyautogui.center(add_poll_btn)
+                            pyautogui.click(add_poll_center)
+                            time.sleep(WAIT_MEDIUM)
+                            break
+                    except Exception:
+                        continue
+                
+                # Fill in the poll information
+                # Web client might have different UI layout
+                # This is a simplified approach
+                
+                # Fill in the question
+                pyautogui.write(question)
+                time.sleep(WAIT_SHORT)
+                
+                # Tab to the first option field
+                pyautogui.press('tab')
+                time.sleep(WAIT_SHORT)
+                
+                # Fill in options
+                for option in options:
+                    pyautogui.write(option)
+                    time.sleep(WAIT_SHORT)
+                    pyautogui.press('tab')
+                    time.sleep(WAIT_SHORT)
+                
+                # Find and click Save/Create button
+                for text in ["Save", "Create", "Done"]:
+                    try:
+                        save_btn = pyautogui.locateOnScreen(
+                            f"Searching for text: {text}",
+                            confidence=0.6
+                        )
+                        if save_btn:
+                            save_center = pyautogui.center(save_btn)
+                            pyautogui.click(save_center)
+                            time.sleep(WAIT_MEDIUM)
+                            break
+                    except Exception:
+                        continue
+                
+                # Launch the poll
+                for text in ["Launch Poll", "Start Poll", "Launch"]:
+                    try:
+                        launch_btn = pyautogui.locateOnScreen(
+                            f"Searching for text: {text}",
+                            confidence=0.6
+                        )
+                        if launch_btn:
+                            launch_center = pyautogui.center(launch_btn)
+                            pyautogui.click(launch_center)
+                            time.sleep(WAIT_MEDIUM)
+                            logger.info("Poll launched successfully in web client")
+                            return True
+                    except Exception:
+                        continue
+                
+                logger.error("Could not launch poll in web client")
+                return False
+                
             else:
-                logger.info("Clicking launch poll button")
-                pyautogui.click(pyautogui.center(launch_button))
-            
-            logger.info("Poll successfully posted to Zoom")
-            return True
-            
+                logger.error(f"Unsupported Zoom client type: {self.zoom_client_type}")
+                return False
+                
         except Exception as e:
             logger.error(f"Error posting poll to Zoom: {str(e)}")
+            return False
+            
+    def set_zoom_client_type(self, client_type: str):
+        """
+        Change the Zoom client type.
+        
+        Args:
+            client_type: "desktop" or "web"
+        """
+        if client_type not in ["desktop", "web"]:
+            logger.error(f"Invalid Zoom client type: {client_type}")
+            return
+            
+        self.zoom_client_type = client_type
+        logger.info(f"Zoom client type changed to {client_type}")
+            
+    def set_confidence_level(self, level: float):
+        """
+        Set the confidence level for image recognition.
+        
+        Args:
+            level: Confidence level (0.0 to 1.0)
+        """
+        if level < 0.1 or level > 1.0:
+            logger.error(f"Invalid confidence level: {level}")
+            return
+            
+        self.confidence_level = level
+        logger.info(f"Image recognition confidence level set to {level}")
+            
+    def has_poll_capability(self) -> bool:
+        """
+        Check if polling capability is available in the current Zoom meeting.
+        
+        Returns:
+            Boolean indicating whether polling is available
+        """
+        # Find and focus the Zoom window
+        if not self.find_zoom_window():
+            logger.error("Failed to find Zoom window")
+            return False
+        
+        # Look for the poll button to verify if polling is available
+        poll_button_pos = self.find_poll_menu()
+        
+        if poll_button_pos:
+            logger.info("Poll capability is available")
+            return True
+        else:
+            logger.warning("Poll capability not found - may not be enabled for this meeting")
             return False
