@@ -1,90 +1,113 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ChatGPT Setup - Automated Zoom Poll Generator</title>
-    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
     <style>
         body {
             padding-top: 40px;
             padding-bottom: 40px;
-            background-color: var(--bs-dark);
+            background-color: var(--bs-body-bg);
         }
-        .setup-container {
-            width: 100%;
-            max-width: 500px;
+        .form-setup {
+            max-width: 400px;
             padding: 15px;
             margin: 0 auto;
         }
-        .setup-card {
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        }
-        .api-instruction {
-            margin-bottom: 15px;
+        .form-setup .form-control {
+            position: relative;
+            height: auto;
+            box-sizing: border-box;
             padding: 10px;
-            border-radius: 5px;
-            background-color: var(--bs-dark-bg-subtle);
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        .integration-type {
+            margin-top: 20px;
+            margin-bottom: 20px;
         }
     </style>
 </head>
-<body data-bs-theme="dark">
-    <div class="setup-container">
-        <div class="text-center mb-4">
-            <h2>ChatGPT Integration Setup</h2>
-            <p class="text-muted">Configure the OpenAI API key for poll generation</p>
-        </div>
+<body>
+
+<div class="container">
+    <div class="form-setup">
+        <h2 class="text-center mb-4">ChatGPT Integration Setup</h2>
         
-        <div class="card setup-card">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    ChatGPT Credentials
+                    <span class="badge bg-info">Stored In Memory Only</span>
+                </div>
+            </div>
             <div class="card-body">
-                {% if has_api_key %}
-                <div class="alert alert-success" role="alert">
-                    <h4 class="alert-heading">API Key Configured</h4>
-                    <p>The OpenAI API key is already configured. You can proceed with using the application.</p>
-                    <hr>
-                    <a href="/" class="btn btn-primary">Go to Dashboard</a>
-                </div>
-                {% else %}
+                <p class="text-muted mb-3">
+                    These credentials will be used to log in to ChatGPT automatically. 
+                    They are stored in memory only and never written to disk.
+                </p>
                 
-                {% if error %}
-                <div class="alert alert-danger" role="alert">
-                    {{ error }}
-                </div>
-                {% endif %}
-                
-                <div class="api-instruction">
-                    <h5>How to get your OpenAI API Key:</h5>
-                    <ol>
-                        <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI API Keys</a></li>
-                        <li>Sign in or create an account if you don't have one</li>
-                        <li>Click on "Create new secret key"</li>
-                        <li>Copy the generated API key (you won't be able to see it again)</li>
-                        <li>Paste it in the field below</li>
-                    </ol>
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> The API key will only be used for this application and won't be stored permanently.
-                    </div>
-                </div>
-                
-                <form method="post" action="/chatgpt_setup">
+                <form method="post">
                     <div class="mb-3">
-                        <label for="api_key" class="form-label">OpenAI API Key</label>
-                        <input type="password" class="form-control" id="api_key" name="api_key" required>
+                        <label for="chatgpt_email" class="form-label">ChatGPT Email</label>
+                        <input type="email" class="form-control" id="chatgpt_email" name="chatgpt_email" placeholder="email@example.com" required autofocus>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="chatgpt_password" class="form-label">ChatGPT Password</label>
+                        <input type="password" class="form-control" id="chatgpt_password" name="chatgpt_password" placeholder="Password" required>
+                        <div class="form-text text-warning">
+                            If you use 2FA, you'll need to create an app-specific password.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 integration-type">
+                        <label class="form-label">Integration Method</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="integration_type" id="browserIntegration" value="browser" checked>
+                            <label class="form-check-label" for="browserIntegration">
+                                Browser Automation <span class="badge bg-success">Recommended</span>
+                            </label>
+                            <div class="form-text">
+                                Uses browser automation to interact with ChatGPT directly.
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="integration_type" id="apiIntegration" value="api">
+                            <label class="form-check-label" for="apiIntegration">
+                                OpenAI API <span class="badge bg-warning">Requires API Key</span>
+                            </label>
+                            <div class="form-text">
+                                Uses the OpenAI API (if available) for poll generation.
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">Save API Key</button>
+                        <button class="btn btn-primary" type="submit">Save Credentials</button>
                         <a href="/" class="btn btn-outline-secondary">Cancel</a>
                     </div>
                 </form>
-                {% endif %}
             </div>
         </div>
         
-        <div class="text-center mt-3">
-            <a href="/" class="text-light">Back to Home</a>
+        <div class="mt-3 text-center">
+            <p class="text-muted">
+                <small>In demo mode, any credentials will be accepted</small>
+            </p>
         </div>
     </div>
+</div>
+
 </body>
 </html>

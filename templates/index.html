@@ -1,328 +1,308 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Automated Zoom Poll Generator</title>
-    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
     <style>
         body {
             padding-top: 20px;
+            padding-bottom: 40px;
         }
-        .log-panel {
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .status-active {
+            background-color: var(--bs-success);
+        }
+        .status-inactive {
+            background-color: var(--bs-danger);
+        }
+        .card {
+            margin-bottom: 20px;
+        }
+        .log-container {
             height: 300px;
             overflow-y: auto;
-            font-family: monospace;
-            font-size: 0.9rem;
             background-color: var(--bs-dark);
-            padding: 10px;
             border-radius: 5px;
-        }
-        .status-badge {
-            font-size: 0.9rem;
-        }
-        .title-bar {
+            padding: 10px;
+            font-family: monospace;
             margin-bottom: 20px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            border-bottom: 1px solid #2d2d2d;
+            padding-bottom: 5px;
+        }
+        .log-timestamp {
+            color: var(--bs-info);
+            margin-right: 10px;
+        }
+        .action-buttons button {
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .demo-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
         }
     </style>
 </head>
-<body data-bs-theme="dark">
-    <div class="container">
-        <!-- Title and Status Bar -->
-        <div class="row title-bar">
-            <div class="col-md-7">
-                <h1>Automated Zoom Poll Generator</h1>
-                <p class="text-muted">Interactive demo of the desktop automation application</p>
+<body>
+
+<div class="container">
+    {% if not logged_in %}
+    <div class="alert alert-warning">
+        Please <a href="/login">log in</a> to access the application.
+    </div>
+    {% else %}
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>Automated Zoom Poll Generator</h1>
+            <p class="lead">Automatically generate and post polls in Zoom meetings based on transcript content.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="/logout" class="btn btn-outline-secondary">Logout</a>
+        </div>
+    </div>
+
+    {% if demo_mode %}
+    <div class="alert alert-info">
+        <strong>Demo Mode Active:</strong> This is a demonstration of the web interface. For full functionality with desktop automation, please use the desktop application.
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    Status
+                    {% if demo_mode %}
+                    <span class="badge bg-warning demo-badge">DEMO</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <p>
+                        <span class="status-indicator {{ 'status-active' if running else 'status-inactive' }}"></span>
+                        <strong>Automation:</strong> {{ 'Running' if running else 'Stopped' }}
+                    </p>
+                    <p>
+                        <span class="status-indicator {{ 'status-active' if has_transcript else 'status-inactive' }}"></span>
+                        <strong>Transcript:</strong> {{ 'Available' if has_transcript else 'Not available' }}
+                    </p>
+                    <p>
+                        <span class="status-indicator {{ 'status-active' if has_poll else 'status-inactive' }}"></span>
+                        <strong>Current Poll:</strong> {{ 'Ready to post' if has_poll else 'Not generated' }}
+                    </p>
+                    <p>
+                        <span class="status-indicator {{ 'status-active' if zoom_client_type == 'desktop' else 'status-inactive' }}"></span>
+                        <strong>Zoom Client:</strong> {{ 'Desktop' if zoom_client_type == 'desktop' else 'Web' }}
+                    </p>
+                    <hr>
+                    <p><strong>Next transcript capture:</strong> {{ next_transcript_time if next_transcript_time else 'Not scheduled' }}</p>
+                    <p><strong>Next poll posting:</strong> {{ next_poll_time if next_poll_time else 'Not scheduled' }}</p>
+                </div>
             </div>
-            <div class="col-md-5 text-end">
-                <div class="d-flex justify-content-end align-items-center h-100">
-                    <div class="me-3">
-                        <span class="badge rounded-pill bg-secondary status-badge me-2">
-                            Scheduler: <span id="scheduler-status-badge">{{ 'Running' if scheduler_status.is_running else 'Stopped' }}</span>
-                        </span>
-                        <a href="/logout" class="btn btn-sm btn-outline-secondary">Logout</a>
-                        <a href="/chatgpt_setup" class="btn btn-sm btn-outline-info ms-2">ChatGPT Setup</a>
-                    </div>
+
+            <div class="card">
+                <div class="card-header">Actions</div>
+                <div class="card-body action-buttons">
+                    {% if running %}
+                    <button id="stopBtn" class="btn btn-danger">Stop Automation</button>
+                    {% else %}
+                    <button id="startBtn" class="btn btn-success">Start Automation</button>
+                    {% endif %}
+                    <hr>
+                    <button id="captureBtn" class="btn btn-primary">Capture Transcript Now</button>
+                    <button id="generateBtn" class="btn btn-primary" {{ 'disabled' if not has_transcript else '' }}>Generate Poll Now</button>
+                    <button id="postBtn" class="btn btn-primary" {{ 'disabled' if not has_poll else '' }}>Post Poll Now</button>
+                    <hr>
+                    <a href="/api/export_logs" target="_blank" class="btn btn-secondary">Export Logs</a>
                 </div>
             </div>
         </div>
 
-        <!-- Control Panel and Status -->
-        <div class="row">
-            <div class="col-md-4">
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5>Controls</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-grid gap-2">
-                            <button id="start-btn" class="btn btn-success" onclick="startScheduler()">Start</button>
-                            <button id="stop-btn" class="btn btn-danger" onclick="stopScheduler()">Stop</button>
-                            <button id="capture-btn" class="btn btn-primary" onclick="captureTranscript()">Capture Transcript</button>
-                            <button id="generate-poll-btn" class="btn btn-info" onclick="generatePoll()">Generate Poll</button>
-                            <button id="post-poll-btn" class="btn btn-warning" onclick="postPoll()">Post Poll</button>
-                            <a href="/api/export_logs" class="btn btn-secondary" target="_blank">Export Logs</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-8">
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5>Status Information</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Next Transcript Capture:</label>
-                                    <div id="next-transcript-capture">
-                                        {{ scheduler_status.next_transcript_capture or 'Not scheduled' }}
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Next Poll Posting:</label>
-                                    <div id="next-poll-posting">
-                                        {{ scheduler_status.next_poll_posting or 'Not scheduled' }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Current Poll:</label>
-                            <div id="current-poll" class="p-2 border rounded bg-dark">
-                                {% if current_poll %}
-                                <div>
-                                    <strong>Question:</strong> {{ current_poll.question }}
-                                </div>
-                                <div>
-                                    <strong>Options:</strong>
-                                    <ol>
-                                        {% for option in current_poll.options %}
-                                        <li>{{ option }}</li>
-                                        {% endfor %}
-                                    </ol>
-                                </div>
-                                {% else %}
-                                No poll generated yet
-                                {% endif %}
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Recent Transcript:</label>
-                            <div id="recent-transcript" class="p-2 border rounded bg-dark" style="max-height: 100px; overflow-y: auto;">
-                                {% if transcripts %}
-                                {{ transcripts[-1] }}
-                                {% else %}
-                                No transcript captured yet
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Log Panel -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5>Application Log</h5>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="clearLog()">Clear Display</button>
-                    </div>
-                    <div class="card-body p-0">
-                        <div id="log-panel" class="log-panel">
-                            {% for log in scheduler_status.log_entries %}
-                            <div class="log-entry">{{ log }}</div>
-                            {% endfor %}
-                        </div>
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">Activity Log</div>
+                <div class="card-body">
+                    <div id="logContainer" class="log-container">
+                        <!-- Log entries will be loaded here dynamically -->
                     </div>
                 </div>
             </div>
         </div>
     </div>
+    {% endif %}
+</div>
 
-    <script>
-        // Update status periodically
-        function updateStatus() {
-            fetch('/api/status')
-                .then(response => response.json())
-                .then(data => {
-                    // Update scheduler status
-                    const schedulerStatus = data.scheduler_status.is_running ? 'Running' : 'Stopped';
-                    document.getElementById('scheduler-status-badge').innerText = schedulerStatus;
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Only setup event handlers if logged in
+    {% if logged_in %}
+    
+    // Function to load logs
+    function loadLogs() {
+        fetch('/api/get_logs')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const logContainer = document.getElementById('logContainer');
+                    logContainer.innerHTML = '';
                     
-                    // Update next capture time
-                    document.getElementById('next-transcript-capture').innerText = 
-                        data.scheduler_status.next_transcript_capture || 'Not scheduled';
-                    
-                    // Update next poll time
-                    document.getElementById('next-poll-posting').innerText = 
-                        data.scheduler_status.next_poll_posting || 'Not scheduled';
-                    
-                    // Update current poll
-                    const currentPollElement = document.getElementById('current-poll');
-                    if (data.current_poll) {
-                        let pollHtml = `<div><strong>Question:</strong> ${data.current_poll.question}</div>`;
-                        pollHtml += `<div><strong>Options:</strong><ol>`;
-                        data.current_poll.options.forEach(option => {
-                            pollHtml += `<li>${option}</li>`;
-                        });
-                        pollHtml += `</ol></div>`;
-                        currentPollElement.innerHTML = pollHtml;
-                    } else {
-                        currentPollElement.innerHTML = 'No poll generated yet';
-                    }
-                    
-                    // Update recent transcript
-                    if (data.recent_transcripts && data.recent_transcripts.length > 0) {
-                        document.getElementById('recent-transcript').innerText = 
-                            data.recent_transcripts[data.recent_transcripts.length - 1];
-                    }
-                })
-                .catch(error => console.error('Error updating status:', error));
-            
-            // Update logs
-            updateLogs();
-        }
-
-        // Update logs
-        function updateLogs() {
-            fetch('/api/logs')
-                .then(response => response.json())
-                .then(data => {
-                    const logPanel = document.getElementById('log-panel');
-                    
-                    // Clear existing logs
-                    logPanel.innerHTML = '';
-                    
-                    // Add each log entry
                     data.logs.forEach(log => {
                         const logEntry = document.createElement('div');
                         logEntry.className = 'log-entry';
-                        logEntry.innerText = log;
-                        logPanel.appendChild(logEntry);
+                        
+                        const timestamp = document.createElement('span');
+                        timestamp.className = 'log-timestamp';
+                        timestamp.textContent = log.timestamp;
+                        
+                        const message = document.createElement('span');
+                        message.textContent = log.message;
+                        
+                        logEntry.appendChild(timestamp);
+                        logEntry.appendChild(message);
+                        logContainer.appendChild(logEntry);
                     });
                     
                     // Scroll to bottom
-                    logPanel.scrollTop = logPanel.scrollHeight;
-                })
-                .catch(error => console.error('Error updating logs:', error));
-        }
-
-        // Start scheduler
-        function startScheduler() {
-            fetch('/api/start', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+                    logContainer.scrollTop = logContainer.scrollHeight;
                 }
             })
+            .catch(error => console.error('Error loading logs:', error));
+    }
+    
+    // Function to update status
+    function updateStatus() {
+        fetch('/api/get_status')
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    updateStatus();
-                } else {
-                    alert(data.message);
+                    const status = data.status;
+                    
+                    // Refresh the page if major status changes to reflect UI state
+                    if (status.running !== {{ 'true' if running else 'false' }} ||
+                        status.has_transcript !== {{ 'true' if has_transcript else 'false' }} ||
+                        status.has_poll !== {{ 'true' if has_poll else 'false' }}) {
+                        location.reload();
+                    }
                 }
             })
-            .catch(error => console.error('Error starting scheduler:', error));
-        }
+            .catch(error => console.error('Error updating status:', error));
+    }
+    
+    // Button event handlers
+    document.getElementById('startBtn')?.addEventListener('click', function() {
+        fetch('/api/start_scheduler', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => console.error('Error starting scheduler:', error));
+    });
+    
+    document.getElementById('stopBtn')?.addEventListener('click', function() {
+        fetch('/api/stop_scheduler', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => console.error('Error stopping scheduler:', error));
+    });
+    
+    document.getElementById('captureBtn')?.addEventListener('click', function() {
+        fetch('/api/capture_transcript', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadLogs();
+                setTimeout(updateStatus, 500);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => console.error('Error capturing transcript:', error));
+    });
+    
+    document.getElementById('generateBtn')?.addEventListener('click', function() {
+        fetch('/api/generate_poll', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadLogs();
+                setTimeout(updateStatus, 500);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => console.error('Error generating poll:', error));
+    });
+    
+    document.getElementById('postBtn')?.addEventListener('click', function() {
+        fetch('/api/post_poll', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadLogs();
+                setTimeout(updateStatus, 500);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => console.error('Error posting poll:', error));
+    });
+    
+    // Initial load
+    loadLogs();
+    
+    // Set up periodic updates
+    setInterval(loadLogs, 5000);
+    setInterval(updateStatus, 10000);
+    
+    {% endif %}
+});
+</script>
 
-        // Stop scheduler
-        function stopScheduler() {
-            fetch('/api/stop', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    updateStatus();
-                } else {
-                    alert(data.message);
-                }
-            })
-            .catch(error => console.error('Error stopping scheduler:', error));
-        }
-
-        // Capture transcript
-        function captureTranscript() {
-            fetch('/api/capture_transcript', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('recent-transcript').innerText = data.transcript;
-                    updateStatus();
-                } else {
-                    alert(data.message);
-                }
-            })
-            .catch(error => console.error('Error capturing transcript:', error));
-        }
-
-        // Generate poll
-        function generatePoll() {
-            fetch('/api/generate_poll', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    updateStatus();
-                } else {
-                    alert(data.message);
-                }
-            })
-            .catch(error => console.error('Error generating poll:', error));
-        }
-
-        // Post poll
-        function postPoll() {
-            fetch('/api/post_poll', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    updateStatus();
-                } else {
-                    alert(data.message);
-                }
-            })
-            .catch(error => console.error('Error posting poll:', error));
-        }
-
-        // Clear log display
-        function clearLog() {
-            document.getElementById('log-panel').innerHTML = '';
-        }
-
-        // Update status every 3 seconds
-        setInterval(updateStatus, 3000);
-        
-        // Initial update
-        updateStatus();
-    </script>
 </body>
 </html>

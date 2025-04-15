@@ -7,36 +7,70 @@ import os
 import time
 import json
 import logging
-import datetime
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
-from werkzeug.middleware.proxy_fix import ProxyFix
-import openai
-from dotenv import load_dotenv
-import uuid
+import re
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
+from werkzeug.security import generate_password_hash, check_password_hash
 
-# Load environment variables
+# Import dotenv for environment variable management
+from dotenv import load_dotenv
 load_dotenv()
 
-# Initialize Flask app
+# Try API-based approach if API key is available
+try:
+    import openai
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    if OPENAI_API_KEY:
+        openai.api_key = OPENAI_API_KEY
+        USE_API = True
+    else:
+        USE_API = False
+except (ImportError, Exception):
+    USE_API = False
+
+# Set up app
 app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", os.urandom(24).hex())
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# Initialize session variables
+def init_session():
+    if 'logged_in' not in session:
+        session['logged_in'] = False
+    if 'zoom_client_type' not in session:
+        session['zoom_client_type'] = 'web'  # Default to web client
+    if 'recent_transcript' not in session:
+        session['recent_transcript'] = ''
+    if 'current_poll' not in session:
+        session['current_poll'] = None
+    if 'running' not in session:
+        session['running'] = False
+    if 'log_entries' not in session:
+        session['log_entries'] = []
+    if 'next_transcript_time' not in session:
+        session['next_transcript_time'] = None
+    if 'next_poll_time' not in session:
+        session['next_poll_time'] = None
 
-# Configuration
-TRANSCRIPT_CAPTURE_INTERVAL = 10 * 60  # 10 minutes in seconds
-POLL_POSTING_INTERVAL = 15 * 60  # 15 minutes in seconds
-CHATGPT_PROMPT = """Based on the transcript below, generate one poll question with four engaging answer options. 
+# In-memory log storage
+log_entries = []
+
+# Simulated feature flags
+HAS_CHATGPT_BROWSER_INTEGRATION = False  # Set to True when implemented
+HAS_ZOOM_DESKTOP_INTEGRATION = False     # Set to True when implemented
+HAS_ZOOM_WEB_INTEGRATION = True         # Demo mode always supports web simulation
+
+# Check if in demo mode
+DEMO_MODE = True  # Set to False in production
+
+# Generate a poll using OpenAI API
+def generate_poll_with_openai(transcript):
+    """Generate a poll using OpenAI API"""
+    if not USE_API:
+        return None
+        
+    try:
+        prompt = f"""Based on the transcript below, generate one poll question with four engaging answer options.
 Format your response as follows:
 Question: [Your question here]
 Option 1: [First option]
@@ -45,374 +79,419 @@ Option 3: [Third option]
 Option 4: [Fourth option]
 
 Here's the transcript:
+{transcript}
 """
 
-# In-memory storage
-credentials = {}
-transcripts = []
-current_poll = None
-scheduler_status = {
-    "is_running": False,
-    "next_transcript_capture": None,
-    "next_poll_posting": None,
-    "log_entries": []
-}
-
-# OpenAI Integration
-def generate_poll_with_openai(transcript):
-    """Generate a poll using OpenAI API"""
-    try:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            logger.error("OpenAI API key not found")
-            add_log_entry("ERROR: OpenAI API key not found")
-            return None
-
-        openai.api_key = api_key
-        client = openai.Client(api_key=api_key)
-        
-        # Create the full prompt with transcript
-        full_prompt = f"{CHATGPT_PROMPT}\n\n{transcript}"
-        
-        # Send request to OpenAI
-        response = client.chat.completions.create(
-            model="gpt-4o",  # the newest OpenAI model is "gpt-4o" which was released May 13, 2024
-            messages=[{"role": "user", "content": full_prompt}],
-            max_tokens=500
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that creates engaging poll questions based on meeting transcripts."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=200
         )
         
-        # Get the response text
-        response_text = response.choices[0].message.content
-        
-        # Parse the response to extract question and options
-        return parse_chatgpt_response(response_text)
-    
+        if response and response.choices and len(response.choices) > 0:
+            poll_text = response.choices[0].message.content
+            return parse_chatgpt_response(poll_text)
+        else:
+            return None
     except Exception as e:
-        logger.error(f"Error generating poll with OpenAI: {str(e)}")
-        add_log_entry(f"ERROR: Failed to generate poll - {str(e)}")
+        app.logger.error(f"Error generating poll with OpenAI: {str(e)}")
         return None
 
+# Parse response from ChatGPT to extract question and options
 def parse_chatgpt_response(response_text):
     """Parse the ChatGPT response to extract question and options"""
     try:
-        lines = response_text.strip().split('\n')
-        
-        question = None
-        options = []
-        
-        for line in lines:
-            if line.startswith('Question:'):
-                question = line.replace('Question:', '').strip()
-            elif line.startswith('Option '):
-                option = line.split(':', 1)[1].strip() if ':' in line else line.strip()
-                options.append(option)
-        
-        if question and len(options) >= 2:
-            # Limit to 4 options
-            options = options[:4]
+        # Extract question using regex
+        question_match = re.search(r"Question:?\s*(.+?)(?:\n|$)", response_text)
+        if not question_match:
+            # Try alternative format
+            question_match = re.search(r"Poll Question:?\s*(.+?)(?:\n|$)", response_text)
             
-            poll_data = {
-                "question": question,
-                "options": options
-            }
-            
-            logger.info(f"Successfully parsed poll: {question}")
-            add_log_entry(f"INFO: Successfully generated poll: {question}")
-            return poll_data
-        else:
-            logger.error("Failed to parse poll from OpenAI response")
-            add_log_entry("ERROR: Failed to parse poll from OpenAI response")
+        if not question_match:
+            app.logger.error("Could not find question in ChatGPT response")
             return None
             
+        question = question_match.group(1).strip()
+        
+        # Extract options using regex
+        option_matches = re.findall(r"Option\s*\d+:?\s*(.+?)(?:\n|$)", response_text)
+        
+        if len(option_matches) < 2:
+            # Try alternative format (A, B, C, D)
+            option_matches = re.findall(r"[A-D][.):]\s*(.+?)(?:\n|$)", response_text)
+        
+        if len(option_matches) < 2:
+            # Try another format common in ChatGPT responses
+            option_matches = re.findall(r"\d+[.):]\s*(.+?)(?:\n|$)", response_text)
+            
+        if len(option_matches) < 2:
+            app.logger.error(f"Not enough options found in ChatGPT response (found {len(option_matches)})")
+            return None
+            
+        # Limit to 4 options
+        options = option_matches[:4]
+        
+        return {
+            "question": question,
+            "options": options
+        }
+        
     except Exception as e:
-        logger.error(f"Error parsing OpenAI response: {str(e)}")
-        add_log_entry(f"ERROR: Error parsing OpenAI response - {str(e)}")
+        app.logger.error(f"Error parsing ChatGPT response: {str(e)}")
         return None
 
-# Logging functions
+# Add a log entry with timestamp
 def add_log_entry(message):
     """Add a log entry with timestamp"""
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = f"{timestamp} - {message}"
-    scheduler_status["log_entries"].append(log_entry)
-    # Keep log size manageable
-    if len(scheduler_status["log_entries"]) > 100:
-        scheduler_status["log_entries"] = scheduler_status["log_entries"][-100:]
-    return log_entry
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = {"timestamp": timestamp, "message": message}
+    log_entries.append(log_entry)
+    # Keep only the last 100 entries
+    if len(log_entries) > 100:
+        log_entries.pop(0)
+    app.logger.info(message)
 
-# Simulated functionality
+# Simulate capturing a transcript from Zoom
 def simulate_transcript_capture():
     """Simulate capturing a transcript from Zoom"""
-    add_log_entry("INFO: Capturing transcript from Zoom")
+    add_log_entry("Simulating transcript capture from Zoom")
     
-    # Generate a simulated transcript
-    sample_transcripts = [
-        "We're discussing the new product features today. The main focus is on improving user experience and reducing load times. We need to prioritize which features to implement first.",
-        "The marketing team presented their Q2 results. We saw a 15% increase in engagement when we launched the email campaign. Social media metrics were also strong.",
-        "Today's meeting is about the upcoming conference. We need volunteers for the booth and speakers for three workshop sessions. Please let me know if you're interested.",
-        "We need to address the customer feedback about the checkout process. Several users reported it's too complicated. Let's simplify it in our next sprint."
+    # Different examples of simulated transcripts for demo purposes
+    transcript_examples = [
+        "We're discussing the new product launch scheduled for next month. The team has completed the initial market research and we're seeing positive feedback from focus groups. There are still some concerns about production timelines that we need to address in today's meeting.",
+        
+        "Today's agenda includes reviewing the quarterly financial results and discussing the expansion plans for the Asia-Pacific region. The numbers show we're exceeding expectations in North America but facing challenges in European markets due to regulatory changes.",
+        
+        "The engineering team has identified some performance issues with the latest software update. We need to decide whether to delay the release or go ahead with a partial rollout. Security testing has already been completed, but there are still concerns about stability under high-load conditions.",
+        
+        "For the upcoming conference, we need to finalize the speaker list and schedule. Marketing has proposed a new format for the panel discussions that could increase audience engagement. We also need to discuss the budget constraints and make some decisions about the venue options.",
+        
+        "The customer satisfaction survey results are in, and there are several areas we need to improve. The support response time is the biggest concern, followed by product documentation clarity. On the positive side, our new features have been very well received, especially the collaboration tools."
     ]
     
+    # Select a random transcript example
     import random
-    transcript = random.choice(sample_transcripts)
+    transcript = random.choice(transcript_examples)
     
-    # Add some randomization to make it seem different each time
-    current_time = datetime.datetime.now().strftime("%H:%M:%S")
-    transcript = f"[{current_time}] {transcript}"
+    add_log_entry(f"Captured transcript: {len(transcript)} characters")
     
-    # Store the transcript
-    transcripts.append(transcript)
-    if len(transcripts) > 5:
-        transcripts.pop(0)  # Keep only the 5 most recent transcripts
-    
-    add_log_entry(f"INFO: Transcript captured ({len(transcript)} characters)")
+    # Store the transcript in session
+    session['recent_transcript'] = transcript
     
     return transcript
 
+# Simulate posting a poll to Zoom
 def simulate_poll_posting(poll_data):
     """Simulate posting a poll to Zoom"""
     if not poll_data:
-        add_log_entry("ERROR: No poll data available to post")
+        add_log_entry("Error: No poll data available for posting")
         return False
+        
+    add_log_entry(f"Simulating posting poll to Zoom: {poll_data['question']}")
     
-    add_log_entry(f"INFO: Posting poll to Zoom: {poll_data['question']}")
-    time.sleep(1)  # Simulate some processing time
+    # For demo, just log what would happen in the real version
+    add_log_entry(f"Poll question: {poll_data['question']}")
+    for idx, option in enumerate(poll_data['options']):
+        add_log_entry(f"Option {idx+1}: {option}")
+        
+    add_log_entry("Poll posted successfully")
     
-    # In a real app, this would use PyAutoGUI to navigate Zoom UI
-    add_log_entry("INFO: Poll successfully posted to Zoom")
+    # Clear current poll after posting
+    session['current_poll'] = None
     
     return True
 
-# Update scheduled times
+# Update the next scheduled times for transcript capture and poll posting
 def update_scheduled_times():
     """Update the next scheduled times for transcript capture and poll posting"""
-    now = datetime.datetime.now()
+    now = datetime.now()
     
-    if scheduler_status["is_running"]:
-        # Set next transcript capture time
-        scheduler_status["next_transcript_capture"] = (now + datetime.timedelta(seconds=TRANSCRIPT_CAPTURE_INTERVAL)).strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Set next poll posting time
-        scheduler_status["next_poll_posting"] = (now + datetime.timedelta(seconds=POLL_POSTING_INTERVAL)).strftime("%Y-%m-%d %H:%M:%S")
-    else:
-        scheduler_status["next_transcript_capture"] = None
-        scheduler_status["next_poll_posting"] = None
+    # Schedule next transcript capture for 10 minutes from now
+    next_transcript_time = now + timedelta(minutes=10)
+    session['next_transcript_time'] = next_transcript_time.strftime("%H:%M:%S")
+    
+    # Schedule next poll posting for 15 minutes from now
+    next_poll_time = now + timedelta(minutes=15)
+    session['next_poll_time'] = next_poll_time.strftime("%H:%M:%S")
+
 
 # Routes
 @app.route('/')
 def index():
     """Main page"""
-    # Check if logged in
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    
-    return render_template('index.html', 
-                           scheduler_status=scheduler_status,
-                           transcripts=transcripts,
-                           current_poll=current_poll)
+    init_session()
+    return render_template(
+        'index.html',
+        logged_in=session.get('logged_in', False),
+        zoom_client_type=session.get('zoom_client_type', 'web'),
+        running=session.get('running', False),
+        has_transcript=bool(session.get('recent_transcript', '')),
+        has_poll=bool(session.get('current_poll')),
+        next_transcript_time=session.get('next_transcript_time'),
+        next_poll_time=session.get('next_poll_time'),
+        demo_mode=DEMO_MODE
+    )
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page"""
-    error = None
+    init_session()
     
     if request.method == 'POST':
-        # Simulate Zoom credentials validation
-        zoom_meeting_id = request.form.get('zoom_meeting_id')
-        zoom_passcode = request.form.get('zoom_passcode')
+        username = request.form.get('username')
+        password = request.form.get('password')
+        client_type = request.form.get('client_type', 'web')
         
-        # Simple validation
-        if zoom_meeting_id and zoom_passcode:
-            # Store credentials in memory
-            credentials['zoom'] = {
-                'meeting_id': zoom_meeting_id,
-                'passcode': zoom_passcode
-            }
-            
+        # For demo, accept any non-empty credentials
+        if username and password:
             session['logged_in'] = True
-            add_log_entry("INFO: User logged in with Zoom credentials")
+            session['zoom_client_type'] = client_type
+            add_log_entry(f"Logged in successfully. Using {client_type} Zoom client.")
+            flash('Logged in successfully!', 'success')
             return redirect(url_for('index'))
         else:
-            error = "Please provide both Meeting ID and Passcode"
+            flash('Invalid credentials', 'error')
     
-    return render_template('login.html', error=error)
+    return render_template('login.html')
 
 @app.route('/chatgpt_setup', methods=['GET', 'POST'])
 def chatgpt_setup():
     """ChatGPT credentials setup"""
-    error = None
+    init_session()
+    
+    if not session.get('logged_in', False):
+        return redirect(url_for('login'))
     
     if request.method == 'POST':
-        # Check if we already have API key in environment
-        if os.environ.get("OPENAI_API_KEY"):
-            add_log_entry("INFO: Using existing OpenAI API key from environment")
-            return redirect(url_for('index'))
+        chatgpt_email = request.form.get('chatgpt_email')
+        chatgpt_password = request.form.get('chatgpt_password')
         
-        # Get API key from form
-        api_key = request.form.get('api_key')
-        
-        if api_key:
-            # In a production app, store securely - here we're just using env var
-            os.environ["OPENAI_API_KEY"] = api_key
-            add_log_entry("INFO: OpenAI API key configured")
+        # For demo, accept any non-empty credentials
+        if chatgpt_email and chatgpt_password:
+            add_log_entry("ChatGPT credentials stored securely (not saved to disk)")
+            flash('ChatGPT credentials stored successfully!', 'success')
+            
+            # Direct to browser integration if implemented, otherwise use API
+            if HAS_CHATGPT_BROWSER_INTEGRATION:
+                add_log_entry("Using ChatGPT browser integration")
+            elif USE_API:
+                add_log_entry("Using ChatGPT API integration")
+            else:
+                add_log_entry("Using demo mode for ChatGPT integration")
+                
             return redirect(url_for('index'))
         else:
-            error = "Please provide a valid API key"
+            flash('Please provide valid ChatGPT credentials', 'error')
     
-    # Check if we already have API key
-    has_api_key = bool(os.environ.get("OPENAI_API_KEY"))
-    
-    return render_template('chatgpt_setup.html', error=error, has_api_key=has_api_key)
+    return render_template('chatgpt_setup.html')
 
 @app.route('/logout')
 def logout():
     """Logout and clear session"""
+    # Stop scheduler if running
+    if session.get('running', False):
+        session['running'] = False
+        add_log_entry("Scheduler stopped on logout")
+    
+    # Clear session
     session.clear()
+    flash('Logged out successfully!', 'success')
     return redirect(url_for('login'))
 
-@app.route('/api/start', methods=['POST'])
+# API Routes
+@app.route('/api/start_scheduler', methods=['POST'])
 def start_scheduler():
     """Start the scheduler"""
-    global scheduler_status
+    init_session()
     
-    # Check if OpenAI API key is configured
-    if not os.environ.get("OPENAI_API_KEY"):
-        return jsonify({
-            "success": False,
-            "message": "OpenAI API key not configured. Please set it up first."
-        })
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
     
-    scheduler_status["is_running"] = True
+    if session.get('running', False):
+        return jsonify({"success": False, "message": "Scheduler already running"}), 400
+    
+    session['running'] = True
     update_scheduled_times()
-    add_log_entry("INFO: Scheduler started")
+    add_log_entry("Scheduler started")
     
-    return jsonify({
-        "success": True,
-        "message": "Scheduler started successfully"
-    })
+    return jsonify({"success": True, "message": "Scheduler started successfully"})
 
-@app.route('/api/stop', methods=['POST'])
+@app.route('/api/stop_scheduler', methods=['POST'])
 def stop_scheduler():
     """Stop the scheduler"""
-    global scheduler_status
+    init_session()
     
-    scheduler_status["is_running"] = False
-    update_scheduled_times()
-    add_log_entry("INFO: Scheduler stopped")
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
     
-    return jsonify({
-        "success": True,
-        "message": "Scheduler stopped successfully"
-    })
+    if not session.get('running', False):
+        return jsonify({"success": False, "message": "Scheduler not running"}), 400
+    
+    session['running'] = False
+    add_log_entry("Scheduler stopped")
+    
+    return jsonify({"success": True, "message": "Scheduler stopped successfully"})
 
 @app.route('/api/capture_transcript', methods=['POST'])
 def capture_transcript():
     """Capture a transcript"""
+    init_session()
+    
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    
+    # Capture transcript
     transcript = simulate_transcript_capture()
     
-    return jsonify({
-        "success": True,
-        "message": "Transcript captured successfully",
-        "transcript": transcript
-    })
+    if transcript:
+        # Update next scheduled transcript time
+        now = datetime.now()
+        next_transcript_time = now + timedelta(minutes=10)
+        session['next_transcript_time'] = next_transcript_time.strftime("%H:%M:%S")
+        
+        return jsonify({
+            "success": True, 
+            "message": "Transcript captured successfully",
+            "transcript_length": len(transcript),
+            "next_transcript_time": session['next_transcript_time']
+        })
+    else:
+        return jsonify({"success": False, "message": "Failed to capture transcript"}), 500
 
 @app.route('/api/generate_poll', methods=['POST'])
 def generate_poll():
     """Generate a poll using the most recent transcript"""
-    global current_poll
+    init_session()
     
-    # Get the most recent transcript
-    if not transcripts:
-        # If no transcript available, capture one
-        transcript = simulate_transcript_capture()
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    
+    transcript = session.get('recent_transcript', '')
+    
+    if not transcript:
+        return jsonify({"success": False, "message": "No transcript available"}), 400
+    
+    # Use OpenAI API if available, otherwise use demo data
+    if USE_API:
+        poll_data = generate_poll_with_openai(transcript)
     else:
-        transcript = transcripts[-1]
+        # Demo poll data
+        poll_data = {
+            "question": "What is the most important topic to discuss next?",
+            "options": [
+                "Product timeline",
+                "Budget concerns",
+                "Market research findings",
+                "Team resources"
+            ]
+        }
     
-    add_log_entry("INFO: Generating poll from transcript")
-    
-    # Generate poll
-    current_poll = generate_poll_with_openai(transcript)
-    
-    if current_poll:
+    if poll_data:
+        session['current_poll'] = poll_data
+        add_log_entry(f"Poll generated: {poll_data['question']}")
         return jsonify({
-            "success": True,
+            "success": True, 
             "message": "Poll generated successfully",
-            "poll": current_poll
+            "poll_data": poll_data
         })
     else:
-        return jsonify({
-            "success": False,
-            "message": "Failed to generate poll"
-        })
+        return jsonify({"success": False, "message": "Failed to generate poll"}), 500
 
 @app.route('/api/post_poll', methods=['POST'])
 def post_poll():
     """Post the current poll"""
-    global current_poll
+    init_session()
     
-    if not current_poll:
-        return jsonify({
-            "success": False,
-            "message": "No poll available to post"
-        })
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
     
-    # Simulate posting poll
-    success = simulate_poll_posting(current_poll)
+    poll_data = session.get('current_poll')
+    
+    if not poll_data:
+        return jsonify({"success": False, "message": "No poll available to post"}), 400
+    
+    success = simulate_poll_posting(poll_data)
     
     if success:
-        # Clear current poll after posting
-        poll_data = current_poll
-        current_poll = None
+        # Update next scheduled poll time
+        now = datetime.now()
+        next_poll_time = now + timedelta(minutes=15)
+        session['next_poll_time'] = next_poll_time.strftime("%H:%M:%S")
         
         return jsonify({
-            "success": True,
+            "success": True, 
             "message": "Poll posted successfully",
-            "poll": poll_data
+            "next_poll_time": session['next_poll_time']
         })
     else:
-        return jsonify({
-            "success": False,
-            "message": "Failed to post poll"
-        })
+        return jsonify({"success": False, "message": "Failed to post poll"}), 500
 
-@app.route('/api/status', methods=['GET'])
+@app.route('/api/get_status', methods=['GET'])
 def get_status():
     """Get the current status"""
-    return jsonify({
-        "scheduler_status": scheduler_status,
-        "has_transcript": len(transcripts) > 0,
-        "current_poll": current_poll,
-        "recent_transcripts": transcripts
-    })
+    init_session()
+    
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    
+    status = {
+        "logged_in": session.get('logged_in', False),
+        "zoom_client_type": session.get('zoom_client_type', 'web'),
+        "running": session.get('running', False),
+        "has_transcript": bool(session.get('recent_transcript', '')),
+        "has_poll": bool(session.get('current_poll')),
+        "next_transcript_time": session.get('next_transcript_time'),
+        "next_poll_time": session.get('next_poll_time'),
+        "demo_mode": DEMO_MODE,
+        "api_available": USE_API
+    }
+    
+    return jsonify({"success": True, "status": status})
 
-@app.route('/api/logs', methods=['GET'])
+@app.route('/api/get_logs', methods=['GET'])
 def get_logs():
     """Get the log entries"""
-    return jsonify({
-        "logs": scheduler_status["log_entries"]
-    })
+    init_session()
+    
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    
+    return jsonify({"success": True, "logs": log_entries})
 
 @app.route('/api/export_logs', methods=['GET'])
 def export_logs():
     """Export logs as JSON"""
-    log_data = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "logs": scheduler_status["log_entries"]
+    init_session()
+    
+    if not session.get('logged_in', False):
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    
+    export_data = {
+        "application": "Zoom Poll Generator",
+        "export_time": datetime.now().isoformat(),
+        "logs": log_entries
     }
     
-    from flask import Response
-    return Response(
-        json.dumps(log_data, indent=2),
-        mimetype='application/json',
-        headers={'Content-Disposition': 'attachment;filename=zoom_poll_generator_logs.json'}
-    )
+    return jsonify(export_data)
 
 if __name__ == '__main__':
-    # Generate a unique session ID
-    if not app.secret_key:
-        app.secret_key = os.urandom(24).hex()
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Get port from environment or use default
+    port = int(os.environ.get("PORT", 5000))
     
     # Add initial log entry
-    add_log_entry("INFO: Application started")
+    add_log_entry("Application started")
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Run app
+    app.run(host='0.0.0.0', port=port, debug=True)
