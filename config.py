@@ -1,85 +1,129 @@
 """
-Configuration settings for the Automated Zoom Poll Generator.
+Configuration Module for the Automated Zoom Poll Generator.
+Handles loading and saving of application configuration.
 """
 
 import os
-from pathlib import Path
+import json
+import logging
+from typing import Dict, Any, Optional
 
-# Application settings
-APP_NAME = "Automated Zoom Poll Generator"
-APP_VERSION = "1.0.0"
+# Configure logger
+logger = logging.getLogger(__name__)
 
-# Deployment mode - set to True to enable web interface, False for desktop app
-WEB_MODE = True
+# Constants
+CONFIG_FILE = "config.json"
+DEFAULT_CONFIG = {
+    "zoom_client_type": "web",  # 'web' or 'desktop'
+    "transcript_interval": 10,  # minutes
+    "poll_interval": 15,  # minutes
+    "display_name": "Poll Generator",
+    "auto_enable_captions": True,
+    "auto_start": False,
+    "chatgpt_integration_method": "browser",  # 'browser' or 'api'
+    "check_interval": 30,  # seconds
+    "save_transcripts": True,
+    "transcripts_folder": "./transcripts",
+    "poll_generation_prompt": """Based on the transcript below from a Zoom meeting, generate one engaging poll question with exactly four answer options. Format your response as a JSON object with "question" and "options" keys, where "options" is a list of four answer choices. The poll should be relevant to the content discussed in the transcript and encourage participation.
 
-# Zoom client type - "desktop" or "web"
-DEFAULT_ZOOM_CLIENT = "desktop"
+Transcript:
+{transcript}
 
-# Logging settings
-LOG_FOLDER = Path.home() / "ZoomPollGenerator_Logs"
-LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-LOG_LEVEL = "INFO"  # Can be DEBUG, INFO, WARNING, ERROR, CRITICAL
-
-# Scheduler settings
-TRANSCRIPT_CAPTURE_INTERVAL = 10 * 60  # 10 minutes in seconds
-POLL_POSTING_INTERVAL = 15 * 60  # 15 minutes in seconds
-
-# UI Automation
-# Wait times (in seconds)
-WAIT_SHORT = 1
-WAIT_MEDIUM = 3
-WAIT_LONG = 10
-
-# ChatGPT Prompt
-CHATGPT_PROMPT = """Based on the transcript below, generate one poll question with four engaging answer options. 
-Format your response as follows:
-Question: [Your question here]
-Option 1: [First option]
-Option 2: [Second option]
-Option 3: [Third option]
-Option 4: [Fourth option]
-
-Here's the transcript:
+Response format:
+{
+  "question": "Your poll question here?",
+  "options": [
+    "Option A",
+    "Option B",
+    "Option C",
+    "Option D"
+  ]
+}
 """
+}
 
-# Web URLs
-CHATGPT_URL = "https://chat.openai.com/"
-ZOOM_WEB_URL = "https://zoom.us/wc/"
+# Timing constants
+WAIT_SHORT = 1  # 1 second
+WAIT_MEDIUM = 5  # 5 seconds
+WAIT_LONG = 10  # 10 seconds
 
-# Selenium WebDriver
-CHROME_DRIVER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chromedriver")
-
-# Default window sizes
-DEFAULT_WINDOW_WIDTH = 1280
-DEFAULT_WINDOW_HEIGHT = 800
-
-# Credential security
-CREDENTIAL_TIMEOUT = 30 * 60  # 30 minutes in seconds before credentials are cleared from memory
-
-# Web server settings
-SERVER_HOST = '0.0.0.0'
-SERVER_PORT = int(os.environ.get("PORT", 5000))
-DEBUG_MODE = True
-
-# Web interface endpoints
-LOGIN_ENDPOINT = '/login'
-CHATGPT_SETUP_ENDPOINT = '/chatgpt_setup'
-DASHBOARD_ENDPOINT = '/'
-
-# Zoom web client DOM elements (for Web Client automation)
-ZOOM_WEB_MEETING_ID_INPUT = "//input[@id='join-confno']"
-ZOOM_WEB_MEETING_PASSWORD_INPUT = "//input[@id='join-pwd']"
-ZOOM_WEB_JOIN_BUTTON = "//button[contains(text(), 'Join')]"
-
-# Default file paths for UI automation image recognition
-IMAGE_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
-POLL_BUTTON_IMAGE = os.path.join(IMAGE_FOLDER, "poll_button.png")
-TRANSCRIPT_BUTTON_IMAGE = os.path.join(IMAGE_FOLDER, "transcript_button.png")
-LAUNCH_POLL_IMAGE = os.path.join(IMAGE_FOLDER, "launch_poll.png")
-
-# Create image folder if it doesn't exist
-if not os.path.exists(IMAGE_FOLDER):
+def load_config() -> Dict[str, Any]:
+    """
+    Load configuration from config file.
+    If the file doesn't exist, create it with default values.
+    
+    Returns:
+        Dict containing configuration values
+    """
     try:
-        os.makedirs(IMAGE_FOLDER)
-    except OSError:
-        pass
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                logger.info("Configuration loaded from file")
+                
+                # Merge with defaults to ensure all required keys exist
+                merged_config = DEFAULT_CONFIG.copy()
+                merged_config.update(config)
+                
+                return merged_config
+        else:
+            # Create default config file
+            save_config(DEFAULT_CONFIG)
+            logger.info("Created default configuration file")
+            return DEFAULT_CONFIG
+    except Exception as e:
+        logger.error(f"Error loading configuration: {str(e)}")
+        logger.info("Using default configuration")
+        return DEFAULT_CONFIG
+
+def save_config(config: Dict[str, Any]) -> bool:
+    """
+    Save configuration to config file.
+    
+    Args:
+        config: Dict containing configuration values
+        
+    Returns:
+        Boolean indicating whether save was successful
+    """
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=4)
+            logger.info("Configuration saved to file")
+            return True
+    except Exception as e:
+        logger.error(f"Error saving configuration: {str(e)}")
+        return False
+
+def get_config_value(key: str, default: Any = None) -> Any:
+    """
+    Get a specific configuration value.
+    
+    Args:
+        key: Configuration key to get
+        default: Default value to return if key is not found
+        
+    Returns:
+        Configuration value or default
+    """
+    config = load_config()
+    return config.get(key, default)
+
+def set_config_value(key: str, value: Any) -> bool:
+    """
+    Set a specific configuration value.
+    
+    Args:
+        key: Configuration key to set
+        value: Value to set
+        
+    Returns:
+        Boolean indicating whether set was successful
+    """
+    try:
+        config = load_config()
+        config[key] = value
+        return save_config(config)
+    except Exception as e:
+        logger.error(f"Error setting configuration value: {str(e)}")
+        return False

@@ -1,4 +1,4 @@
-# Automated Zoom Poll Generator - Setup Script for Windows
+   # Automated Zoom Poll Generator - Setup Script for Windows
 # This PowerShell script sets up the Automated Zoom Poll Generator application on Windows
 
 # Function to write colored output

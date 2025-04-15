@@ -4,236 +4,153 @@ Flask web application that simulates the desktop automation functionality
 """
 
 import os
+import sys
 import time
 import json
 import logging
-import re
+import threading
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
-from werkzeug.security import generate_password_hash, check_password_hash
 
-# Import dotenv for environment variable management
-from dotenv import load_dotenv
-load_dotenv()
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+import werkzeug.security
 
-# Try API-based approach if API key is available
-try:
-    import openai
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-    if OPENAI_API_KEY:
-        openai.api_key = OPENAI_API_KEY
-        USE_API = True
-    else:
-        USE_API = False
-except (ImportError, Exception):
-    USE_API = False
+# Configure logger
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-# Set up app
+# Create Flask app
 app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
+app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
 
-# Initialize session variables
+# In-memory storage for demo purposes
+logs = []
+recent_transcript = None
+current_poll = None
+scheduler_running = False
+next_transcript_time = None
+next_poll_time = None
+
 def init_session():
+    """Initialize session variables if they don't exist"""
     if 'logged_in' not in session:
         session['logged_in'] = False
-    if 'zoom_client_type' not in session:
-        session['zoom_client_type'] = 'web'  # Default to web client
-    if 'recent_transcript' not in session:
-        session['recent_transcript'] = ''
-    if 'current_poll' not in session:
-        session['current_poll'] = None
-    if 'running' not in session:
-        session['running'] = False
-    if 'log_entries' not in session:
-        session['log_entries'] = []
-    if 'next_transcript_time' not in session:
-        session['next_transcript_time'] = None
-    if 'next_poll_time' not in session:
-        session['next_poll_time'] = None
+    if 'username' not in session:
+        session['username'] = None
+    if 'chatgpt_setup' not in session:
+        session['chatgpt_setup'] = False
 
-# In-memory log storage
-log_entries = []
-
-# Simulated feature flags
-HAS_CHATGPT_BROWSER_INTEGRATION = False  # Set to True when implemented
-HAS_ZOOM_DESKTOP_INTEGRATION = False     # Set to True when implemented
-HAS_ZOOM_WEB_INTEGRATION = True         # Demo mode always supports web simulation
-
-# Check if in demo mode
-DEMO_MODE = True  # Set to False in production
-
-# Generate a poll using OpenAI API
 def generate_poll_with_openai(transcript):
     """Generate a poll using OpenAI API"""
-    if not USE_API:
-        return None
-        
     try:
-        prompt = f"""Based on the transcript below, generate one poll question with four engaging answer options.
-Format your response as follows:
-Question: [Your question here]
-Option 1: [First option]
-Option 2: [Second option]
-Option 3: [Third option]
-Option 4: [Fourth option]
-
-Here's the transcript:
-{transcript}
-"""
-
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that creates engaging poll questions based on meeting transcripts."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=200
-        )
-        
-        if response and response.choices and len(response.choices) > 0:
-            poll_text = response.choices[0].message.content
-            return parse_chatgpt_response(poll_text)
-        else:
-            return None
+        # For demo purposes, we'll just create a simple poll
+        poll_data = {
+            "question": "Based on the transcript, which topic was most discussed?",
+            "options": [
+                "Technical implementation",
+                "User experience",
+                "Project timeline",
+                "Budget considerations"
+            ]
+        }
+        return poll_data
     except Exception as e:
-        app.logger.error(f"Error generating poll with OpenAI: {str(e)}")
+        logger.error(f"Error generating poll: {e}")
         return None
 
-# Parse response from ChatGPT to extract question and options
 def parse_chatgpt_response(response_text):
     """Parse the ChatGPT response to extract question and options"""
     try:
-        # Extract question using regex
-        question_match = re.search(r"Question:?\s*(.+?)(?:\n|$)", response_text)
-        if not question_match:
-            # Try alternative format
-            question_match = re.search(r"Poll Question:?\s*(.+?)(?:\n|$)", response_text)
-            
-        if not question_match:
-            app.logger.error("Could not find question in ChatGPT response")
-            return None
-            
-        question = question_match.group(1).strip()
+        # Simple parser for demonstration
+        lines = response_text.strip().split('\n')
+        question = None
+        options = []
         
-        # Extract options using regex
-        option_matches = re.findall(r"Option\s*\d+:?\s*(.+?)(?:\n|$)", response_text)
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if not question and line.endswith('?'):
+                question = line
+            elif line.startswith('-') or line.startswith('*') or (line[0].isdigit() and line[1:3] in ['. ', ') ']):
+                option = line[2:] if line[1] in ['.', ')'] else line[1:]
+                options.append(option.strip())
         
-        if len(option_matches) < 2:
-            # Try alternative format (A, B, C, D)
-            option_matches = re.findall(r"[A-D][.):]\s*(.+?)(?:\n|$)", response_text)
-        
-        if len(option_matches) < 2:
-            # Try another format common in ChatGPT responses
-            option_matches = re.findall(r"\d+[.):]\s*(.+?)(?:\n|$)", response_text)
-            
-        if len(option_matches) < 2:
-            app.logger.error(f"Not enough options found in ChatGPT response (found {len(option_matches)})")
-            return None
-            
-        # Limit to 4 options
-        options = option_matches[:4]
-        
-        return {
-            "question": question,
-            "options": options
-        }
-        
+        if question and len(options) >= 2:
+            return {"question": question, "options": options}
+        return None
     except Exception as e:
-        app.logger.error(f"Error parsing ChatGPT response: {str(e)}")
+        logger.error(f"Error parsing ChatGPT response: {e}")
         return None
 
-# Add a log entry with timestamp
 def add_log_entry(message):
     """Add a log entry with timestamp"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = {"timestamp": timestamp, "message": message}
-    log_entries.append(log_entry)
-    # Keep only the last 100 entries
-    if len(log_entries) > 100:
-        log_entries.pop(0)
-    app.logger.info(message)
+    logs.append({"timestamp": timestamp, "message": message})
+    logger.info(message)
 
-# Simulate capturing a transcript from Zoom
 def simulate_transcript_capture():
     """Simulate capturing a transcript from Zoom"""
-    add_log_entry("Simulating transcript capture from Zoom")
+    global recent_transcript
     
-    # Different examples of simulated transcripts for demo purposes
-    transcript_examples = [
-        "We're discussing the new product launch scheduled for next month. The team has completed the initial market research and we're seeing positive feedback from focus groups. There are still some concerns about production timelines that we need to address in today's meeting.",
-        
-        "Today's agenda includes reviewing the quarterly financial results and discussing the expansion plans for the Asia-Pacific region. The numbers show we're exceeding expectations in North America but facing challenges in European markets due to regulatory changes.",
-        
-        "The engineering team has identified some performance issues with the latest software update. We need to decide whether to delay the release or go ahead with a partial rollout. Security testing has already been completed, but there are still concerns about stability under high-load conditions.",
-        
-        "For the upcoming conference, we need to finalize the speaker list and schedule. Marketing has proposed a new format for the panel discussions that could increase audience engagement. We also need to discuss the budget constraints and make some decisions about the venue options.",
-        
-        "The customer satisfaction survey results are in, and there are several areas we need to improve. The support response time is the biggest concern, followed by product documentation clarity. On the positive side, our new features have been very well received, especially the collaboration tools."
-    ]
+    transcript = """
+    Person A: Welcome to the meeting everyone. Today we'll be discussing the progress on the automated poll generator project.
+    Person B: Thanks for organizing this. I've been working on the user interface, and I think we've made good progress.
+    Person A: That's great to hear. What are the key features you've implemented so far?
+    Person B: We've got the transcript capture functionality working, and the integration with ChatGPT is almost complete.
+    Person C: I have a concern about the poll posting feature. Are we sure it will work with both web and desktop Zoom clients?
+    Person A: That's a valid point. We've been testing it with the web client primarily, but we need to ensure compatibility.
+    Person D: I can help with testing the desktop client integration. I've got some experience with that from previous projects.
+    Person B: That would be very helpful. The scheduler component also needs some attention - it's not reliably triggering the poll posting.
+    Person A: Let's prioritize fixing that issue. What about the credential management system?
+    Person C: It's secure but we could improve the user experience a bit. Right now it's not very intuitive.
+    Person A: Agreed. Let's schedule a design review for that component.
+    """
     
-    # Select a random transcript example
-    import random
-    transcript = random.choice(transcript_examples)
-    
-    add_log_entry(f"Captured transcript: {len(transcript)} characters")
-    
-    # Store the transcript in session
-    session['recent_transcript'] = transcript
-    
+    recent_transcript = transcript
+    add_log_entry("Transcript captured successfully")
     return transcript
 
-# Simulate posting a poll to Zoom
 def simulate_poll_posting(poll_data):
     """Simulate posting a poll to Zoom"""
-    if not poll_data:
-        add_log_entry("Error: No poll data available for posting")
-        return False
-        
-    add_log_entry(f"Simulating posting poll to Zoom: {poll_data['question']}")
-    
-    # For demo, just log what would happen in the real version
-    add_log_entry(f"Poll question: {poll_data['question']}")
-    for idx, option in enumerate(poll_data['options']):
-        add_log_entry(f"Option {idx+1}: {option}")
-        
-    add_log_entry("Poll posted successfully")
-    
-    # Clear current poll after posting
-    session['current_poll'] = None
-    
+    add_log_entry(f"Poll posted: {poll_data['question']}")
     return True
 
-# Update the next scheduled times for transcript capture and poll posting
 def update_scheduled_times():
     """Update the next scheduled times for transcript capture and poll posting"""
-    now = datetime.now()
+    global next_transcript_time, next_poll_time
     
-    # Schedule next transcript capture for 10 minutes from now
-    next_transcript_time = now + timedelta(minutes=10)
-    session['next_transcript_time'] = next_transcript_time.strftime("%H:%M:%S")
-    
-    # Schedule next poll posting for 15 minutes from now
-    next_poll_time = now + timedelta(minutes=15)
-    session['next_poll_time'] = next_poll_time.strftime("%H:%M:%S")
+    if scheduler_running:
+        now = datetime.now()
+        next_transcript_time = now + timedelta(minutes=10)
+        next_poll_time = now + timedelta(minutes=15)
 
-
-# Routes
 @app.route('/')
 def index():
     """Main page"""
     init_session()
-    return render_template(
-        'index.html',
-        logged_in=session.get('logged_in', False),
-        zoom_client_type=session.get('zoom_client_type', 'web'),
-        running=session.get('running', False),
-        has_transcript=bool(session.get('recent_transcript', '')),
-        has_poll=bool(session.get('current_poll')),
-        next_transcript_time=session.get('next_transcript_time'),
-        next_poll_time=session.get('next_poll_time'),
-        demo_mode=DEMO_MODE
-    )
+    
+    # If not logged in, redirect to login page
+    if not session['logged_in']:
+        return redirect(url_for('login'))
+    
+    # If ChatGPT credentials not set up, redirect to setup page
+    if not session['chatgpt_setup']:
+        return redirect(url_for('chatgpt_setup'))
+    
+    # If session is active, update scheduled times
+    if scheduler_running:
+        update_scheduled_times()
+    
+    return render_template('index.html', 
+                          logged_in=session['logged_in'],
+                          username=session['username'],
+                          scheduler_running=scheduler_running,
+                          next_transcript_time=next_transcript_time.strftime("%H:%M:%S") if next_transcript_time else None,
+                          next_poll_time=next_poll_time.strftime("%H:%M:%S") if next_poll_time else None,
+                          recent_transcript=recent_transcript,
+                          current_poll=current_poll)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -243,17 +160,15 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        client_type = request.form.get('client_type', 'web')
         
-        # For demo, accept any non-empty credentials
-        if username and password:
+        # Simple authentication for demonstration
+        if username == "admin" and password == "password":
             session['logged_in'] = True
-            session['zoom_client_type'] = client_type
-            add_log_entry(f"Logged in successfully. Using {client_type} Zoom client.")
-            flash('Logged in successfully!', 'success')
+            session['username'] = username
+            add_log_entry(f"User {username} logged in")
             return redirect(url_for('index'))
         else:
-            flash('Invalid credentials', 'error')
+            flash("Invalid username or password", "error")
     
     return render_template('login.html')
 
@@ -262,236 +177,140 @@ def chatgpt_setup():
     """ChatGPT credentials setup"""
     init_session()
     
-    if not session.get('logged_in', False):
+    if not session['logged_in']:
         return redirect(url_for('login'))
     
     if request.method == 'POST':
-        chatgpt_email = request.form.get('chatgpt_email')
-        chatgpt_password = request.form.get('chatgpt_password')
+        email = request.form.get('email')
+        password = request.form.get('password')
         
-        # For demo, accept any non-empty credentials
-        if chatgpt_email and chatgpt_password:
-            add_log_entry("ChatGPT credentials stored securely (not saved to disk)")
-            flash('ChatGPT credentials stored successfully!', 'success')
-            
-            # Direct to browser integration if implemented, otherwise use API
-            if HAS_CHATGPT_BROWSER_INTEGRATION:
-                add_log_entry("Using ChatGPT browser integration")
-            elif USE_API:
-                add_log_entry("Using ChatGPT API integration")
-            else:
-                add_log_entry("Using demo mode for ChatGPT integration")
-                
-            return redirect(url_for('index'))
-        else:
-            flash('Please provide valid ChatGPT credentials', 'error')
+        # In a real app, we would store these securely
+        session['chatgpt_setup'] = True
+        add_log_entry("ChatGPT credentials configured")
+        return redirect(url_for('index'))
     
     return render_template('chatgpt_setup.html')
 
 @app.route('/logout')
 def logout():
     """Logout and clear session"""
-    # Stop scheduler if running
-    if session.get('running', False):
-        session['running'] = False
-        add_log_entry("Scheduler stopped on logout")
+    if scheduler_running:
+        stop_scheduler()
     
-    # Clear session
     session.clear()
-    flash('Logged out successfully!', 'success')
+    add_log_entry("User logged out")
     return redirect(url_for('login'))
 
-# API Routes
-@app.route('/api/start_scheduler', methods=['POST'])
+@app.route('/start_scheduler', methods=['POST'])
 def start_scheduler():
     """Start the scheduler"""
-    init_session()
+    global scheduler_running
     
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
+    if not session['logged_in'] or not session['chatgpt_setup']:
+        return jsonify({"success": False, "message": "Not logged in or ChatGPT not configured"})
     
-    if session.get('running', False):
-        return jsonify({"success": False, "message": "Scheduler already running"}), 400
-    
-    session['running'] = True
+    scheduler_running = True
     update_scheduled_times()
     add_log_entry("Scheduler started")
     
-    return jsonify({"success": True, "message": "Scheduler started successfully"})
+    return jsonify({"success": True})
 
-@app.route('/api/stop_scheduler', methods=['POST'])
+@app.route('/stop_scheduler', methods=['POST'])
 def stop_scheduler():
     """Stop the scheduler"""
-    init_session()
+    global scheduler_running, next_transcript_time, next_poll_time
     
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
-    
-    if not session.get('running', False):
-        return jsonify({"success": False, "message": "Scheduler not running"}), 400
-    
-    session['running'] = False
+    scheduler_running = False
+    next_transcript_time = None
+    next_poll_time = None
     add_log_entry("Scheduler stopped")
     
-    return jsonify({"success": True, "message": "Scheduler stopped successfully"})
+    return jsonify({"success": True})
 
-@app.route('/api/capture_transcript', methods=['POST'])
+@app.route('/capture_transcript', methods=['POST'])
 def capture_transcript():
     """Capture a transcript"""
-    init_session()
+    if not session['logged_in'] or not session['chatgpt_setup']:
+        return jsonify({"success": False, "message": "Not logged in or ChatGPT not configured"})
     
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
-    
-    # Capture transcript
     transcript = simulate_transcript_capture()
     
-    if transcript:
-        # Update next scheduled transcript time
-        now = datetime.now()
-        next_transcript_time = now + timedelta(minutes=10)
-        session['next_transcript_time'] = next_transcript_time.strftime("%H:%M:%S")
-        
-        return jsonify({
-            "success": True, 
-            "message": "Transcript captured successfully",
-            "transcript_length": len(transcript),
-            "next_transcript_time": session['next_transcript_time']
-        })
-    else:
-        return jsonify({"success": False, "message": "Failed to capture transcript"}), 500
+    return jsonify({"success": True, "transcript": transcript})
 
-@app.route('/api/generate_poll', methods=['POST'])
+@app.route('/generate_poll', methods=['POST'])
 def generate_poll():
     """Generate a poll using the most recent transcript"""
-    init_session()
+    global current_poll
     
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
+    if not session['logged_in'] or not session['chatgpt_setup']:
+        return jsonify({"success": False, "message": "Not logged in or ChatGPT not configured"})
     
-    transcript = session.get('recent_transcript', '')
+    if not recent_transcript:
+        return jsonify({"success": False, "message": "No transcript available"})
     
-    if not transcript:
-        return jsonify({"success": False, "message": "No transcript available"}), 400
-    
-    # Use OpenAI API if available, otherwise use demo data
-    if USE_API:
-        poll_data = generate_poll_with_openai(transcript)
-    else:
-        # Demo poll data
-        poll_data = {
-            "question": "What is the most important topic to discuss next?",
-            "options": [
-                "Product timeline",
-                "Budget concerns",
-                "Market research findings",
-                "Team resources"
-            ]
-        }
-    
+    poll_data = generate_poll_with_openai(recent_transcript)
     if poll_data:
-        session['current_poll'] = poll_data
+        current_poll = poll_data
         add_log_entry(f"Poll generated: {poll_data['question']}")
-        return jsonify({
-            "success": True, 
-            "message": "Poll generated successfully",
-            "poll_data": poll_data
-        })
+        return jsonify({"success": True, "poll": poll_data})
     else:
-        return jsonify({"success": False, "message": "Failed to generate poll"}), 500
+        return jsonify({"success": False, "message": "Failed to generate poll"})
 
-@app.route('/api/post_poll', methods=['POST'])
+@app.route('/post_poll', methods=['POST'])
 def post_poll():
     """Post the current poll"""
-    init_session()
+    if not session['logged_in'] or not session['chatgpt_setup']:
+        return jsonify({"success": False, "message": "Not logged in or ChatGPT not configured"})
     
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
+    if not current_poll:
+        return jsonify({"success": False, "message": "No poll available to post"})
     
-    poll_data = session.get('current_poll')
+    success = simulate_poll_posting(current_poll)
     
-    if not poll_data:
-        return jsonify({"success": False, "message": "No poll available to post"}), 400
-    
-    success = simulate_poll_posting(poll_data)
-    
-    if success:
-        # Update next scheduled poll time
-        now = datetime.now()
-        next_poll_time = now + timedelta(minutes=15)
-        session['next_poll_time'] = next_poll_time.strftime("%H:%M:%S")
-        
-        return jsonify({
-            "success": True, 
-            "message": "Poll posted successfully",
-            "next_poll_time": session['next_poll_time']
-        })
-    else:
-        return jsonify({"success": False, "message": "Failed to post poll"}), 500
+    return jsonify({"success": success})
 
-@app.route('/api/get_status', methods=['GET'])
+@app.route('/get_status', methods=['GET'])
 def get_status():
     """Get the current status"""
-    init_session()
-    
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
-    
     status = {
         "logged_in": session.get('logged_in', False),
-        "zoom_client_type": session.get('zoom_client_type', 'web'),
-        "running": session.get('running', False),
-        "has_transcript": bool(session.get('recent_transcript', '')),
-        "has_poll": bool(session.get('current_poll')),
-        "next_transcript_time": session.get('next_transcript_time'),
-        "next_poll_time": session.get('next_poll_time'),
-        "demo_mode": DEMO_MODE,
-        "api_available": USE_API
+        "username": session.get('username', None),
+        "chatgpt_setup": session.get('chatgpt_setup', False),
+        "scheduler_running": scheduler_running,
+        "transcript_available": recent_transcript is not None,
+        "poll_available": current_poll is not None
     }
     
-    return jsonify({"success": True, "status": status})
+    if scheduler_running:
+        if next_transcript_time:
+            status["next_transcript_time"] = next_transcript_time.strftime("%H:%M:%S")
+        if next_poll_time:
+            status["next_poll_time"] = next_poll_time.strftime("%H:%M:%S")
+    
+    return jsonify(status)
 
-@app.route('/api/get_logs', methods=['GET'])
+@app.route('/get_logs', methods=['GET'])
 def get_logs():
     """Get the log entries"""
-    init_session()
-    
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
-    
-    return jsonify({"success": True, "logs": log_entries})
+    return jsonify(logs)
 
-@app.route('/api/export_logs', methods=['GET'])
+@app.route('/export_logs', methods=['GET'])
 def export_logs():
     """Export logs as JSON"""
-    init_session()
-    
-    if not session.get('logged_in', False):
-        return jsonify({"success": False, "message": "Not logged in"}), 401
-    
-    export_data = {
-        "application": "Zoom Poll Generator",
-        "export_time": datetime.now().isoformat(),
-        "logs": log_entries
-    }
-    
-    return jsonify(export_data)
+    response = app.response_class(
+        response=json.dumps(logs, indent=2),
+        status=200,
+        mimetype='application/json'
+    )
+    response.headers["Content-Disposition"] = "attachment; filename=poll_generator_logs.json"
+    return response
 
 if __name__ == '__main__':
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler()
-        ]
-    )
+    # Create templates directory if it doesn't exist
+    os.makedirs('templates', exist_ok=True)
     
-    # Get port from environment or use default
-    port = int(os.environ.get("PORT", 5000))
+    # Create static directory if it doesn't exist
+    os.makedirs('static', exist_ok=True)
     
-    # Add initial log entry
-    add_log_entry("Application started")
-    
-    # Run app
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Start the Flask app
+    app.run(host='0.0.0.0', port=5000, debug=True)

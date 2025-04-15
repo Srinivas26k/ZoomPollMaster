@@ -1,113 +1,58 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ChatGPT Setup - Automated Zoom Poll Generator</title>
-    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
-    <style>
-        body {
-            padding-top: 40px;
-            padding-bottom: 40px;
-            background-color: var(--bs-body-bg);
-        }
-        .form-setup {
-            max-width: 400px;
-            padding: 15px;
-            margin: 0 auto;
-        }
-        .form-setup .form-control {
-            position: relative;
-            height: auto;
-            box-sizing: border-box;
-            padding: 10px;
-            font-size: 16px;
-            margin-bottom: 10px;
-        }
-        .integration-type {
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-    </style>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
 </head>
-<body>
-
-<div class="container">
-    <div class="form-setup">
-        <h2 class="text-center mb-4">ChatGPT Integration Setup</h2>
-        
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-        
-        <div class="card">
-            <div class="card-header">
-                <div class="d-flex justify-content-between align-items-center">
-                    ChatGPT Credentials
-                    <span class="badge bg-info">Stored In Memory Only</span>
+<body data-bs-theme="dark">
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card bg-dark">
+                    <div class="card-header">
+                        <h3 class="card-title text-center">ChatGPT Credentials Setup</h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-4">
+                            The Automated Zoom Poll Generator uses ChatGPT to generate poll questions 
+                            from meeting transcripts. Please enter your ChatGPT credentials below.
+                        </p>
+                        
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+                        
+                        <form method="post" action="{{ url_for('chatgpt_setup') }}">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">ChatGPT Email</label>
+                                <input type="email" class="form-control bg-dark text-light" id="email" name="email" required>
+                                <div class="form-text">Enter the email address associated with your ChatGPT account</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">ChatGPT Password</label>
+                                <input type="password" class="form-control bg-dark text-light" id="password" name="password" required>
+                                <div class="form-text">Your password will be stored securely</div>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">Save Credentials</button>
+                                <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary">Cancel</a>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="card-footer">
+                        <p class="text-muted mb-0">
+                            <small>Note: For the demo version, you can enter any email/password combination.</small>
+                        </p>
+                    </div>
                 </div>
             </div>
-            <div class="card-body">
-                <p class="text-muted mb-3">
-                    These credentials will be used to log in to ChatGPT automatically. 
-                    They are stored in memory only and never written to disk.
-                </p>
-                
-                <form method="post">
-                    <div class="mb-3">
-                        <label for="chatgpt_email" class="form-label">ChatGPT Email</label>
-                        <input type="email" class="form-control" id="chatgpt_email" name="chatgpt_email" placeholder="email@example.com" required autofocus>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="chatgpt_password" class="form-label">ChatGPT Password</label>
-                        <input type="password" class="form-control" id="chatgpt_password" name="chatgpt_password" placeholder="Password" required>
-                        <div class="form-text text-warning">
-                            If you use 2FA, you'll need to create an app-specific password.
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3 integration-type">
-                        <label class="form-label">Integration Method</label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="integration_type" id="browserIntegration" value="browser" checked>
-                            <label class="form-check-label" for="browserIntegration">
-                                Browser Automation <span class="badge bg-success">Recommended</span>
-                            </label>
-                            <div class="form-text">
-                                Uses browser automation to interact with ChatGPT directly.
-                            </div>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="integration_type" id="apiIntegration" value="api">
-                            <label class="form-check-label" for="apiIntegration">
-                                OpenAI API <span class="badge bg-warning">Requires API Key</span>
-                            </label>
-                            <div class="form-text">
-                                Uses the OpenAI API (if available) for poll generation.
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-primary" type="submit">Save Credentials</button>
-                        <a href="/" class="btn btn-outline-secondary">Cancel</a>
-                    </div>
-                </form>
-            </div>
-        </div>
-        
-        <div class="mt-3 text-center">
-            <p class="text-muted">
-                <small>In demo mode, any credentials will be accepted</small>
-            </p>
         </div>
     </div>
-</div>
-
 </body>
 </html>

@@ -1,0 +1,305 @@
+Production-Grade Automated Zoom Poll Generator Documentation
+1. Project Overview
+Objective:
+Develop and deploy a fully automated, production-grade desktop application that:
+
+Captures Live Transcript:
+Uses UI automation to copy a 10‑minute transcript from the Zoom meeting. This solution supports both the Zoom desktop app and the Zoom web version on Windows.
+
+Generates Poll via ChatGPT:
+Launches a Chrome browser using Selenium, logs into ChatGPT (if required), submits the transcript using a predefined prompt, and retrieves a poll question with answer options.
+
+Posts the Poll Automatically:
+Uses PyAutoGUI to switch back to Zoom and post the poll question by interacting with the Zoom poll/quiz interface.
+
+Handles Credentials Securely:
+Prompts the user for real Zoom credentials (Meeting ID, Passkey, etc.) and ChatGPT login details using secure dialogs (tkinter). This information is used for the live session only.
+
+Ensures Robust Real-Time Operation:
+Fully integrated scheduling for real-time operations: transcription capture every 10 minutes, immediate poll generation, and poll posting shortly after generation.
+
+Provides Comprehensive Logging & Testing:
+Maintains a detailed log with timestamps for every action (with the ability to export to a TXT file) and includes an automated test suite covering each module.
+
+Delivers as a Desktop App:
+Packaged as a standalone executable via PyInstaller (or an equivalent tool) to allow smooth distribution and operation with zero manual intervention during production meetings.
+
+2. System Architecture & Modules
+Core Modules and Their Libraries
+Live Transcript Capture Module
+
+Purpose:
+Capture a 10‑minute transcript segment directly from Zoom.
+
+Libraries:
+
+PyAutoGUI: For simulating mouse drag and copy operations.
+
+pytesseract: (Optional) For OCR if text cannot be directly copied.
+
+OpenCV: (Optional) For advanced image processing.
+
+Function:
+Implement a function capture_transcript() that works on both Zoom desktop and Zoom web versions.
+
+ChatGPT Poll Generation Module
+
+Purpose:
+Communicate with ChatGPT via a Chrome browser automation session.
+
+Libraries:
+
+Selenium: For browser automation to handle login and prompt submission.
+
+BeautifulSoup: (Optional) For HTML parsing if needed.
+
+Function:
+Implement generate_poll_with_chatgpt(transcript: str) -> dict to paste the transcript with a preset prompt and return a JSON-like poll (question and four options).
+
+UI Automation for Poll Posting Module
+
+Purpose:
+Navigate Zoom’s UI to post the poll.
+
+Libraries:
+
+PyAutoGUI: For switching windows, clicking UI elements, and posting the poll.
+
+pytesseract: (If needed) For confirming UI changes.
+
+Function:
+Develop post_poll_to_zoom(poll: dict) that reliably posts the poll on both Zoom desktop and Zoom web versions.
+
+Orchestration & Scheduling Module
+
+Purpose:
+Time and coordinate the process.
+
+Libraries:
+
+APScheduler or schedule: For job scheduling.
+
+Function:
+Main script (main.py) triggers:
+
+Transcript capture every 10 minutes.
+
+Immediate poll generation.
+
+Poll posting after generation (e.g., at the 15‑minute mark).
+
+Credential & UI Prompt Module
+
+Purpose:
+Securely capture user credentials.
+
+Libraries:
+
+tkinter: For GUI dialogs to prompt for:
+
+Zoom Meeting ID, Passkey, etc.
+
+ChatGPT login credentials.
+
+Function:
+Run at startup to securely collect and store credentials in-memory.
+
+Logging Module
+
+Purpose:
+Record every action with detailed timestamps.
+
+Libraries:
+
+logging: For robust event logging.
+
+datetime: For timestamping.
+
+Function:
+Generate detailed logs that can be exported as a TXT file for review and troubleshooting.
+
+Testing & Quality Assurance Module
+
+Purpose:
+Provide automated test cases for real-time features.
+
+Testing Scope:
+
+UI automation tests for PyAutoGUI and pytesseract.
+
+Selenium tests for browser actions and ChatGPT interaction.
+
+End-to-end workflow testing via simulated inputs (with real meeting IDs and passkeys used during final production tests).
+
+Function:
+Write a suite in a /tests directory that automatically validates:
+
+Live transcript capture from both Zoom versions.
+
+Correct execution of browser automation.
+
+Accurate and reliable poll posting.
+
+Integrated logging and scheduling operation.
+
+Desktop Packaging
+
+Purpose:
+Bundle everything into a deployable app.
+
+Tools:
+
+PyInstaller: For creating a standalone executable.
+
+Function:
+Build production executables that handle all processes and UI prompts without requiring source code edits.
+
+Data Flow Overview
+The following simplified flowchart (using Mermaid syntax) illustrates the production process:
+
+mermaid
+Copy
+Edit
+flowchart TD
+    A[Start Application & Prompt for Credentials]
+    B[Capture Live Transcript from Zoom (Desktop/Web)]
+    C[Save 10-Minute Transcript]
+    D[Launch Chrome with Selenium]
+    E[Login to ChatGPT (if required)]
+    F[Paste Transcript & Submit Prompt to ChatGPT]
+    G[Retrieve ChatGPT Response]
+    H[Parse and Format Poll (Question + 4 Options)]
+    I[Switch to Zoom with PyAutoGUI]
+    J[Navigate to Poll/Quiz Interface]
+    K[Post Generated Poll]
+    L[Log Action with Timestamp]
+    M[Export/Download Log as TXT File (if needed)]
+    N[Repeat Scheduled Cycle or End]
+    
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    J --> K
+    K --> L
+    L --> M
+    M --> N
+Note: Render this flowchart using a Mermaid renderer or convert it to an image for documentation purposes.
+
+3. Testing and Quality Assurance
+Test Code Development
+Unit Tests:
+Create tests for each function:
+
+test_capture_transcript() to simulate transcript capture.
+
+test_generate_poll_with_chatgpt() to validate the response format and error handling.
+
+test_post_poll_to_zoom() to simulate clicking actions on Zoom.
+
+Integration Tests:
+
+Full workflow tests, ideally via mocking UI interactions on both Zoom versions and the ChatGPT interface.
+
+Simulate different meeting IDs/passkeys and interaction delays.
+
+Validate log generation with real timestamps.
+
+Platform Specific Tests:
+
+Ensure tests run on Windows, covering both Zoom desktop and web variants.
+
+Example Unit Test Outline (using Python’s unittest):
+
+python
+Copy
+Edit
+import unittest
+from modules.transcript_capture import capture_transcript
+from modules.poll_generation import generate_poll_with_chatgpt
+from modules.zoom_automation import post_poll_to_zoom
+
+class TestProductionFeatures(unittest.TestCase):
+    def test_capture_transcript(self):
+        transcript = capture_transcript()
+        self.assertIsInstance(transcript, str)
+        self.assertGreater(len(transcript), 0)
+
+    def test_generate_poll_with_chatgpt(self):
+        dummy_transcript = "This is a test transcript for 10 minutes of meeting dialogue."
+        poll = generate_poll_with_chatgpt(dummy_transcript)
+        self.assertIn("question", poll)
+        self.assertIn("options", poll)
+        self.assertEqual(len(poll["options"]), 4)
+
+    def test_post_poll_to_zoom(self):
+        # This would use a mocked Zoom UI environment
+        poll = {"question": "Test poll?", "options": ["A", "B", "C", "D"]}
+        result = post_poll_to_zoom(poll)
+        self.assertTrue(result)  # Assuming function returns True on success
+
+if __name__ == '__main__':
+    unittest.main()
+Continuous Integration:
+Consider integration with CI tools (e.g., GitHub Actions) for automated tests before deployment.
+
+4. Environment Setup & Deployment
+Environment Requirements
+Operating System: Windows (with support for both Zoom desktop and web versions)
+
+Python Version: 3.8 or later
+
+Dependencies
+Ensure the following libraries are added to your requirements.txt:
+
+nginx
+Copy
+Edit
+PyAutoGUI
+pytesseract
+opencv-python
+selenium
+beautifulsoup4
+APScheduler
+schedule
+tkinter    # (included with standard Python on Windows)
+logging
+pyinstaller
+unittest
+Deployment Steps
+Set Up the Repository:
+Clone the updated repository onto your Windows machine or Replit environment.
+
+Configure Environment Variables:
+Securely store Zoom and ChatGPT credentials using tkinter prompt dialogs during initial run; no credentials should be hard-coded.
+
+Run Test Suite:
+Execute the tests in the /tests folder to ensure all modules are functioning as expected in real time.
+
+Build the Executable:
+Use PyInstaller to package the application:
+
+bash
+Copy
+Edit
+pyinstaller --onefile main.py
+Deployment and Demonstration:
+Ensure the app is fully automated and test it in a real meeting with actual meeting IDs and passkeys. The final production version should be prepared to deploy within 10 minutes during demonstration.
+
+5. Final Notes
+Robust Real-Time Features:
+Make sure that UI automation scripts are calibrated and that correct screen coordinates are used for both Zoom desktop and web versions.
+
+Logging and Troubleshooting:
+All actions are logged with precise timestamps, and errors trigger immediate log entries. The log can be exported as a TXT file.
+
+Security and Credential Handling:
+Credentials are captured at runtime via tkinter GUI prompts and stored only in-memory; secure connection protocols must be used for browser communications.
+
+Distribution:
+The final product will be compiled as a single desktop executable file for easy distribution among users, ensuring a plug-and-play solution.

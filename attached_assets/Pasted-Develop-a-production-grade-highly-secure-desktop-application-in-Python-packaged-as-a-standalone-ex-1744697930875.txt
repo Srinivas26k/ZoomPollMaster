@@ -1,0 +1,75 @@
+Develop a production-grade, highly secure desktop application in Python, packaged as a standalone executable, that automates Zoom poll creation in real meetings. The solution must work on Windows, supporting both the Zoom desktop app and Zoom web version.
+
+Key Functional Requirements:
+
+Live Transcript Capture:
+
+Use PyAutoGUI to simulate mouse drag and copy operations for capturing a 10‑minute transcript from Zoom (both desktop and web versions).
+
+Optionally integrate pytesseract and OpenCV to enhance text extraction.
+
+Poll Generation via ChatGPT:
+
+Automate Chrome using Selenium to open the ChatGPT interface.
+
+Prompt the user with secure tkinter dialogs for ChatGPT login credentials if required.
+
+Automatically log in, paste the transcript with a predefined prompt (“Based on the transcript below, generate one poll question with four engaging answer options”), and retrieve a structured response in JSON format.
+
+Poll Posting on Zoom:
+
+Use PyAutoGUI to switch back to the Zoom interface and navigate to the poll/quiz window.
+
+Automate the posting of the retrieved poll to the Zoom meeting.
+
+Credential Management:
+
+Prompt the user for Zoom Meeting ID, Passkey, and any other necessary credentials via secure tkinter dialogs at startup.
+
+Scheduling & Orchestration:
+
+Utilize APScheduler or schedule to coordinate tasks:
+
+Capture transcript every 10 minutes.
+
+Generate poll immediately after transcript capture.
+
+Post the poll promptly at a designated time (e.g., 15 minutes into the cycle).
+
+Testing and Validation:
+
+Write comprehensive unit and integration tests covering real-time functionalities: transcript capture, Selenium browser automation for ChatGPT, UI automation with PyAutoGUI, and the complete posting workflow.
+
+Ensure tests simulate real operations with actual meeting IDs and passkeys.
+
+Logging and Error Management:
+
+Integrate Python’s logging to capture timestamps for every action and errors.
+
+Provide functionality to export the log as a TXT file.
+
+Desktop Application Packaging:
+
+Package the entire application using PyInstaller (or an equivalent tool) into a single executable.
+
+The final product must operate fully autonomously with zero manual intervention during live sessions.
+
+Additional Requirements:
+
+Ensure high security and robust error handling throughout the code.
+
+Code must include inline documentation and a comprehensive README detailing setup, deployment, and operational instructions.
+
+The final solution should be deployable on a Windows system and ready for demonstration within 10 minutes.
+
+Deliverables:
+
+All core functions (capture_transcript(), generate_poll_with_chatgpt(), post_poll_to_zoom()) and the main orchestration script (main.py).
+
+GUI modules for credential prompts and logging.
+
+A comprehensive test suite in the /tests directory.
+
+A packaged, production-ready executable.
+
+The final, production-grade solution must be demonstrated in a real meeting scenario with actual credentials. Please ensure all additional features and test cases are implemented and document any further enhancements as needed.

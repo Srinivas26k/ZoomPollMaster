@@ -1,286 +1,331 @@
 """
-Credential Manager for the Automated Zoom Poll Generator.
-Handles secure storage and retrieval of user credentials.
+Credential Manager Module for the Automated Zoom Poll Generator.
+Handles secure management of user credentials.
 """
 
-import tkinter as tk
-from tkinter import simpledialog, messagebox
-import threading
-import time
-from typing import Dict, Optional
+import os
+import json
 import logging
+import getpass
+from typing import Dict, Any, Optional, List
 
-from config import CREDENTIAL_TIMEOUT
-from logger import get_logger
-
-logger = get_logger()
-
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class CredentialManager:
     """
-    Manages user credentials for Zoom and ChatGPT.
-    Stores credentials in memory only and never writes them to disk.
+    Manages credentials for Zoom and ChatGPT.
+    Handles storing, retrieving, and clearing credentials securely.
     """
     
     def __init__(self):
         """Initialize the credential manager."""
-        self._zoom_credentials: Dict[str, str] = {}
-        self._chatgpt_credentials: Dict[str, str] = {}
-        self._credential_lock = threading.Lock()
-        self._root = None
-        self._credential_timer = None
+        self.service_name = "ZoomPollGenerator"
+        self.zoom_credentials = None
+        self.chatgpt_credentials = None
         
-        logger.info("Credential manager initialized")
-    
+        logger.info("CredentialManager initialized")
+        
     def prompt_for_zoom_credentials(self) -> Optional[Dict[str, str]]:
         """
-        Display a dialog to collect Zoom credentials.
+        Prompt the user for Zoom credentials interactively.
         
         Returns:
-            Dict containing Zoom credentials or None if user cancels.
+            Dict containing Zoom credentials or None if cancelled
         """
-        logger.info("Prompting user for Zoom credentials")
-        
-        self._root = tk.Tk()
-        self._root.withdraw()  # Hide the main window
-        
-        # Create a new dialog window
-        dialog = tk.Toplevel(self._root)
-        dialog.title("Zoom Credentials")
-        dialog.geometry("400x250")
-        dialog.protocol("WM_DELETE_WINDOW", lambda: self._cancel_credentials(dialog))
-        
-        # Center the dialog
-        dialog.update_idletasks()
-        width = dialog.winfo_width()
-        height = dialog.winfo_height()
-        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (dialog.winfo_screenheight() // 2) - (height // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
-        
-        # Instructions
-        tk.Label(dialog, text="Enter your Zoom meeting credentials", font=("Helvetica", 12)).pack(pady=10)
-        
-        # Meeting ID
-        frame1 = tk.Frame(dialog)
-        frame1.pack(fill='x', padx=20, pady=5)
-        tk.Label(frame1, text="Meeting ID:", width=12, anchor='w').pack(side='left')
-        meeting_id_var = tk.StringVar()
-        meeting_id_entry = tk.Entry(frame1, textvariable=meeting_id_var, width=30)
-        meeting_id_entry.pack(side='left', padx=5, fill='x', expand=True)
-        
-        # Passcode
-        frame2 = tk.Frame(dialog)
-        frame2.pack(fill='x', padx=20, pady=5)
-        tk.Label(frame2, text="Passcode:", width=12, anchor='w').pack(side='left')
-        passcode_var = tk.StringVar()
-        passcode_entry = tk.Entry(frame2, textvariable=passcode_var, width=30, show="*")
-        passcode_entry.pack(side='left', padx=5, fill='x', expand=True)
-        
-        # Host Key (optional)
-        frame3 = tk.Frame(dialog)
-        frame3.pack(fill='x', padx=20, pady=5)
-        tk.Label(frame3, text="Host Key:", width=12, anchor='w').pack(side='left')
-        host_key_var = tk.StringVar()
-        host_key_entry = tk.Entry(frame3, textvariable=host_key_var, width=30, show="*")
-        host_key_entry.pack(side='left', padx=5, fill='x', expand=True)
-        
-        # Buttons
-        button_frame = tk.Frame(dialog)
-        button_frame.pack(pady=20)
-        
-        result = [None]  # Using list to store result for access within nested function
-        
-        def on_submit():
-            creds = {
-                "meeting_id": meeting_id_var.get().strip(),
-                "passcode": passcode_var.get().strip(),
-                "host_key": host_key_var.get().strip()
+        try:
+            logger.info("Prompting for Zoom credentials")
+            
+            print("\n=== Zoom Meeting Credentials ===")
+            meeting_id = input("Meeting ID: ").strip()
+            
+            # Check if the user wants to cancel
+            if not meeting_id:
+                logger.warning("Zoom credential input cancelled by user")
+                return None
+            
+            passcode = input("Passcode: ").strip()
+            display_name = input("Display Name [Poll Generator]: ").strip() or "Poll Generator"
+            
+            credentials = {
+                "meeting_id": meeting_id,
+                "passcode": passcode,
+                "display_name": display_name
             }
             
-            # Validate inputs
-            if not creds["meeting_id"]:
-                messagebox.showerror("Error", "Meeting ID is required", parent=dialog)
-                return
+            # Store credentials
+            self.zoom_credentials = credentials
             
-            result[0] = creds
-            dialog.destroy()
-        
-        submit_button = tk.Button(button_frame, text="Submit", command=on_submit, width=10)
-        submit_button.pack(side='left', padx=10)
-        
-        cancel_button = tk.Button(
-            button_frame, 
-            text="Cancel", 
-            command=lambda: self._cancel_credentials(dialog), 
-            width=10
-        )
-        cancel_button.pack(side='left', padx=10)
-        
-        # Focus on the first field
-        meeting_id_entry.focus_set()
-        
-        # Make dialog modal
-        dialog.transient(self._root)
-        dialog.grab_set()
-        self._root.wait_window(dialog)
-        
-        # Destroy the root window after dialog is closed
-        if self._root:
-            self._root.destroy()
-            self._root = None
-        
-        if result[0] is not None:
-            logger.info("Zoom credentials collected successfully")
-            self._zoom_credentials = result[0]
-            self._start_credential_timeout()
-            return result[0]
-        else:
-            logger.warning("User cancelled Zoom credential entry")
+            # Ask if the user wants to save the credentials
+            save_creds = input("Save these credentials for future use? (y/n): ").strip().lower() == 'y'
+            
+            if save_creds:
+                self._save_credentials("zoom", credentials)
+                logger.info("Zoom credentials saved")
+            
+            return credentials
+            
+        except Exception as e:
+            logger.error(f"Error prompting for Zoom credentials: {str(e)}")
             return None
     
     def prompt_for_chatgpt_credentials(self) -> Optional[Dict[str, str]]:
         """
-        Display a dialog to collect ChatGPT credentials.
+        Prompt the user for ChatGPT credentials interactively.
         
         Returns:
-            Dict containing ChatGPT credentials or None if user cancels.
+            Dict containing ChatGPT credentials or None if cancelled
         """
-        logger.info("Prompting user for ChatGPT credentials")
-        
-        self._root = tk.Tk()
-        self._root.withdraw()  # Hide the main window
-        
-        # Create a new dialog window
-        dialog = tk.Toplevel(self._root)
-        dialog.title("ChatGPT Credentials")
-        dialog.geometry("400x200")
-        dialog.protocol("WM_DELETE_WINDOW", lambda: self._cancel_credentials(dialog))
-        
-        # Center the dialog
-        dialog.update_idletasks()
-        width = dialog.winfo_width()
-        height = dialog.winfo_height()
-        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (dialog.winfo_screenheight() // 2) - (height // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
-        
-        # Instructions
-        tk.Label(dialog, text="Enter your ChatGPT credentials", font=("Helvetica", 12)).pack(pady=10)
-        
-        # Email/Username
-        frame1 = tk.Frame(dialog)
-        frame1.pack(fill='x', padx=20, pady=5)
-        tk.Label(frame1, text="Email:", width=12, anchor='w').pack(side='left')
-        email_var = tk.StringVar()
-        email_entry = tk.Entry(frame1, textvariable=email_var, width=30)
-        email_entry.pack(side='left', padx=5, fill='x', expand=True)
-        
-        # Password
-        frame2 = tk.Frame(dialog)
-        frame2.pack(fill='x', padx=20, pady=5)
-        tk.Label(frame2, text="Password:", width=12, anchor='w').pack(side='left')
-        password_var = tk.StringVar()
-        password_entry = tk.Entry(frame2, textvariable=password_var, width=30, show="*")
-        password_entry.pack(side='left', padx=5, fill='x', expand=True)
-        
-        # Buttons
-        button_frame = tk.Frame(dialog)
-        button_frame.pack(pady=20)
-        
-        result = [None]  # Using list to store result for access within nested function
-        
-        def on_submit():
-            creds = {
-                "email": email_var.get().strip(),
-                "password": password_var.get().strip()
+        try:
+            logger.info("Prompting for ChatGPT credentials")
+            
+            print("\n=== ChatGPT Credentials ===")
+            email = input("Email: ").strip()
+            
+            # Check if the user wants to cancel
+            if not email:
+                logger.warning("ChatGPT credential input cancelled by user")
+                return None
+            
+            # Use getpass for password to avoid showing it on screen
+            password = getpass.getpass("Password: ")
+            
+            credentials = {
+                "email": email,
+                "password": password
             }
             
-            # Validate inputs
-            if not creds["email"] or not creds["password"]:
-                messagebox.showerror("Error", "Email and password are required", parent=dialog)
-                return
+            # Store credentials
+            self.chatgpt_credentials = credentials
             
-            result[0] = creds
-            dialog.destroy()
-        
-        submit_button = tk.Button(button_frame, text="Submit", command=on_submit, width=10)
-        submit_button.pack(side='left', padx=10)
-        
-        cancel_button = tk.Button(
-            button_frame, 
-            text="Cancel", 
-            command=lambda: self._cancel_credentials(dialog), 
-            width=10
-        )
-        cancel_button.pack(side='left', padx=10)
-        
-        # Focus on the first field
-        email_entry.focus_set()
-        
-        # Make dialog modal
-        dialog.transient(self._root)
-        dialog.grab_set()
-        self._root.wait_window(dialog)
-        
-        # Destroy the root window after dialog is closed
-        if self._root:
-            self._root.destroy()
-            self._root = None
-        
-        if result[0] is not None:
-            logger.info("ChatGPT credentials collected successfully")
-            self._chatgpt_credentials = result[0]
-            self._start_credential_timeout()
-            return result[0]
-        else:
-            logger.warning("User cancelled ChatGPT credential entry")
+            # Ask if the user wants to save the credentials
+            save_creds = input("Save these credentials for future use? (y/n): ").strip().lower() == 'y'
+            
+            if save_creds:
+                self._save_credentials("chatgpt", credentials)
+                logger.info("ChatGPT credentials saved")
+            
+            return credentials
+            
+        except Exception as e:
+            logger.error(f"Error prompting for ChatGPT credentials: {str(e)}")
             return None
     
-    def get_zoom_credentials(self) -> Dict[str, str]:
+    def load_zoom_credentials(self) -> Optional[Dict[str, str]]:
         """
-        Get the stored Zoom credentials.
+        Load saved Zoom credentials.
         
         Returns:
-            Dict containing Zoom credentials.
+            Dict containing Zoom credentials or None if not found
         """
-        with self._credential_lock:
-            if not self._zoom_credentials:
-                self.prompt_for_zoom_credentials()
-            return self._zoom_credentials.copy()
+        if self.zoom_credentials:
+            return self.zoom_credentials
+            
+        credentials = self._load_credentials("zoom")
+        
+        if credentials:
+            logger.info("Loaded saved Zoom credentials")
+            self.zoom_credentials = credentials
+        else:
+            logger.warning("No saved Zoom credentials found")
+            
+        return credentials
     
-    def get_chatgpt_credentials(self) -> Dict[str, str]:
+    def load_chatgpt_credentials(self) -> Optional[Dict[str, str]]:
         """
-        Get the stored ChatGPT credentials.
+        Load saved ChatGPT credentials.
         
         Returns:
-            Dict containing ChatGPT credentials.
+            Dict containing ChatGPT credentials or None if not found
         """
-        with self._credential_lock:
-            if not self._chatgpt_credentials:
-                self.prompt_for_chatgpt_credentials()
-            return self._chatgpt_credentials.copy()
-    
-    def clear_credentials(self):
-        """Clear all stored credentials from memory."""
-        with self._credential_lock:
-            self._zoom_credentials = {}
-            self._chatgpt_credentials = {}
-        logger.info("All credentials cleared from memory")
-    
-    def _cancel_credentials(self, dialog):
-        """Handle dialog cancellation."""
-        dialog.destroy()
-    
-    def _start_credential_timeout(self):
-        """Start a timer to clear credentials after the configured timeout."""
-        # Cancel existing timer if running
-        if self._credential_timer:
-            self._credential_timer.cancel()
+        if self.chatgpt_credentials:
+            return self.chatgpt_credentials
+            
+        credentials = self._load_credentials("chatgpt")
         
-        # Create new timer
-        self._credential_timer = threading.Timer(CREDENTIAL_TIMEOUT, self.clear_credentials)
-        self._credential_timer.daemon = True
-        self._credential_timer.start()
+        if credentials:
+            logger.info("Loaded saved ChatGPT credentials")
+            self.chatgpt_credentials = credentials
+        else:
+            logger.warning("No saved ChatGPT credentials found")
+            
+        return credentials
+    
+    def clear_credentials(self, credential_type: str = None) -> bool:
+        """
+        Clear stored credentials.
         
-        logger.debug(f"Credential timeout set for {CREDENTIAL_TIMEOUT} seconds")
+        Args:
+            credential_type: Type of credentials to clear ('zoom', 'chatgpt', or None for all)
+            
+        Returns:
+            Boolean indicating whether clearing was successful
+        """
+        try:
+            if credential_type is None or credential_type == "zoom":
+                self.zoom_credentials = None
+                self._delete_credentials("zoom")
+                logger.info("Zoom credentials cleared")
+                
+            if credential_type is None or credential_type == "chatgpt":
+                self.chatgpt_credentials = None
+                self._delete_credentials("chatgpt")
+                logger.info("ChatGPT credentials cleared")
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error clearing credentials: {str(e)}")
+            return False
+    
+    def update_zoom_credentials(self, credentials: Dict[str, str]) -> bool:
+        """
+        Update Zoom credentials.
+        
+        Args:
+            credentials: Dict containing updated Zoom credentials
+            
+        Returns:
+            Boolean indicating whether update was successful
+        """
+        try:
+            if not isinstance(credentials, dict):
+                logger.error("Invalid credentials format")
+                return False
+                
+            # Validate required fields
+            required_fields = ["meeting_id", "passcode"]
+            for field in required_fields:
+                if field not in credentials:
+                    logger.error(f"Missing required field: {field}")
+                    return False
+            
+            # Store credentials
+            self.zoom_credentials = credentials
+            self._save_credentials("zoom", credentials)
+            
+            logger.info("Zoom credentials updated")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating Zoom credentials: {str(e)}")
+            return False
+    
+    def update_chatgpt_credentials(self, credentials: Dict[str, str]) -> bool:
+        """
+        Update ChatGPT credentials.
+        
+        Args:
+            credentials: Dict containing updated ChatGPT credentials
+            
+        Returns:
+            Boolean indicating whether update was successful
+        """
+        try:
+            if not isinstance(credentials, dict):
+                logger.error("Invalid credentials format")
+                return False
+                
+            # Validate required fields
+            required_fields = ["email", "password"]
+            for field in required_fields:
+                if field not in credentials:
+                    logger.error(f"Missing required field: {field}")
+                    return False
+            
+            # Store credentials
+            self.chatgpt_credentials = credentials
+            self._save_credentials("chatgpt", credentials)
+            
+            logger.info("ChatGPT credentials updated")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating ChatGPT credentials: {str(e)}")
+            return False
+    
+    def _save_credentials(self, credential_type: str, credentials: Dict[str, str]) -> bool:
+        """
+        Save credentials securely.
+        
+        Args:
+            credential_type: Type of credentials ('zoom' or 'chatgpt')
+            credentials: Dict containing credentials to save
+            
+        Returns:
+            Boolean indicating whether save was successful
+        """
+        try:
+            # Use file-based storage
+            cred_file = f".{credential_type}_credentials.json"
+            with open(cred_file, 'w') as f:
+                json.dump(credentials, f)
+            
+            # Attempt to set restrictive permissions
+            try:
+                os.chmod(cred_file, 0o600)  # Read/write for owner only
+            except:
+                logger.warning(f"Could not set restrictive permissions on {cred_file}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving credentials: {str(e)}")
+            return False
+    
+    def _load_credentials(self, credential_type: str) -> Optional[Dict[str, str]]:
+        """
+        Load credentials securely.
+        
+        Args:
+            credential_type: Type of credentials ('zoom' or 'chatgpt')
+            
+        Returns:
+            Dict containing credentials or None if not found
+        """
+        try:
+            # Use file-based storage
+            cred_file = f".{credential_type}_credentials.json"
+            
+            if os.path.exists(cred_file):
+                with open(cred_file, 'r') as f:
+                    return json.load(f)
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error loading credentials: {str(e)}")
+            return None
+    
+    def _delete_credentials(self, credential_type: str) -> bool:
+        """
+        Delete stored credentials.
+        
+        Args:
+            credential_type: Type of credentials ('zoom' or 'chatgpt')
+            
+        Returns:
+            Boolean indicating whether deletion was successful
+        """
+        try:
+            # Delete from file-based storage
+            cred_file = f".{credential_type}_credentials.json"
+            
+            if os.path.exists(cred_file):
+                os.remove(cred_file)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting credentials: {str(e)}")
+            return False
+
+# Helper function to create an instance
+def create_credential_manager() -> CredentialManager:
+    """
+    Create and return a CredentialManager instance.
+    
+    Returns:
+        CredentialManager instance
+    """
+    return CredentialManager()

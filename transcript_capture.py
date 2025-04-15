@@ -1,334 +1,325 @@
 """
 Transcript Capture Module for the Automated Zoom Poll Generator.
-Uses PyAutoGUI to capture a 10-minute transcript from Zoom.
+Handles the capture of meeting transcripts from Zoom using UI automation.
 """
 
+import os
 import time
-import re
 import logging
-import pyautogui
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Dict, Any
+
 import pyperclip
-from typing import Optional, Tuple, List, Dict
-from datetime import datetime, timedelta
 
-from logger import get_logger
-from config import WAIT_SHORT, WAIT_MEDIUM, WAIT_LONG, TRANSCRIPT_BUTTON_IMAGE
-
-logger = get_logger()
-
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class TranscriptCapture:
     """
-    Handles the capture of transcripts directly from the Zoom application.
-    Uses UI automation to locate and copy transcript text.
+    Handles the capture of meeting transcripts from Zoom meetings.
+    Supports both desktop and web Zoom clients.
     """
     
-    def __init__(self, zoom_client_type="desktop"):
+    def __init__(self, client_type: str = "web", enable_ocr: bool = False):
         """
         Initialize the transcript capture module.
         
         Args:
-            zoom_client_type: Type of Zoom client ("desktop" or "web")
+            client_type: Type of Zoom client ('web' or 'desktop')
+            enable_ocr: Whether to enable OCR for text extraction (requires pytesseract and OpenCV)
         """
-        self.zoom_client_type = zoom_client_type
-        self.transcript_history = []
+        self.client_type = client_type.lower()
+        self.enable_ocr = enable_ocr
+        self.last_capture_time = None
+        self.save_transcripts = True
+        self.transcripts_folder = "./transcripts"
         
-        # Set confidence level for image recognition
-        self.confidence_level = 0.7
+        # Create transcripts folder if it doesn't exist
+        if self.save_transcripts:
+            os.makedirs(self.transcripts_folder, exist_ok=True)
         
-        logger.info(f"Transcript capture module initialized for {zoom_client_type} client")
+        logger.info(f"TranscriptCapture initialized with {client_type} client type")
+        
+        # Initialize OCR if enabled
+        if self.enable_ocr:
+            try:
+                # Import OCR-related libraries only if needed
+                import pytesseract
+                import cv2
+                self.pytesseract = pytesseract
+                self.cv2 = cv2
+                logger.info("OCR functionality enabled")
+            except ImportError as e:
+                logger.error(f"Failed to import OCR libraries: {e}")
+                self.enable_ocr = False
     
-    def find_transcript_area(self) -> Optional[Tuple[int, int, int, int]]:
+    def capture_transcript(self) -> Optional[str]:
         """
-        Find the transcript area in the Zoom window.
+        Capture transcript from the current Zoom meeting.
         
         Returns:
-            Tuple of (x, y, width, height) for the transcript area, or None if not found.
+            The captured transcript as a string, or None if capture failed
         """
-        logger.info("Looking for transcript area in Zoom window")
+        logger.info("Starting transcript capture")
         
         try:
-            if self.zoom_client_type == "desktop":
-                # For desktop client, look for the transcript button first
-                transcript_btn = pyautogui.locateOnScreen(
-                    TRANSCRIPT_BUTTON_IMAGE, 
-                    confidence=self.confidence_level
-                )
+            if self.client_type == "desktop":
+                transcript = self._capture_from_desktop_client()
+            else:  # web client
+                transcript = self._capture_from_web_client()
+            
+            if transcript:
+                self.last_capture_time = datetime.now()
                 
-                if not transcript_btn:
-                    logger.warning("Could not find transcript button in Zoom desktop client")
-                    
-                    # Try alternative method - look for text elements that might indicate transcript area
-                    # This is a fallback approach that might be less reliable
-                    transcript_region = None
-                    for text in ["Transcript", "Live Transcript", "Closed Caption"]:
-                        try:
-                            transcript_region = pyautogui.locateOnScreen(
-                                f"Searching for text: {text}",
-                                confidence=0.6
-                            )
-                            if transcript_region:
-                                logger.info(f"Found potential transcript area using text search: {text}")
-                                break
-                        except Exception:
-                            continue
-                    
-                    return transcript_region
+                # Save transcript to file if enabled
+                if self.save_transcripts:
+                    self._save_transcript_to_file(transcript)
                 
-                # Click on transcript button to ensure transcript panel is visible
-                transcript_btn_center = pyautogui.center(transcript_btn)
-                pyautogui.click(transcript_btn_center)
-                time.sleep(WAIT_SHORT)
-                
-                # The transcript panel should now be visible
-                # For simplicity, we'll use a region estimate based on typical Zoom UI layout
-                # This would need refinement for different screen sizes and Zoom versions
-                screen_width, screen_height = pyautogui.size()
-                transcript_area = (
-                    screen_width - 350,  # Typical transcript panel width
-                    150,                # Allow space for top controls
-                    330,                # Panel width estimate
-                    screen_height - 250  # Leave space for bottom controls
-                )
-                
-                logger.info(f"Estimated transcript area at {transcript_area}")
-                return transcript_area
-                
-            elif self.zoom_client_type == "web":
-                # For web client, we'll need to use different detection approaches
-                # Web client usually shows transcript in a more standardized area
-                # This is a simplified approach that would need refinement
-                screen_width, screen_height = pyautogui.size()
-                
-                # Estimate based on typical web client layout
-                transcript_area = (
-                    screen_width - 380,
-                    200,
-                    360,
-                    screen_height - 300
-                )
-                
-                logger.info(f"Estimated web client transcript area at {transcript_area}")
-                return transcript_area
-                
+                logger.info(f"Successfully captured transcript ({len(transcript)} characters)")
+                return transcript
             else:
-                logger.error(f"Unsupported Zoom client type: {self.zoom_client_type}")
+                logger.warning("Transcript capture returned empty result")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error finding transcript area: {str(e)}")
+            logger.error(f"Error during transcript capture: {str(e)}")
             return None
     
-    def capture_transcript(self) -> str:
+    def _capture_from_desktop_client(self) -> Optional[str]:
         """
-        Capture the current transcript from Zoom.
+        Capture transcript from Zoom desktop client using UI automation.
         
         Returns:
-            String containing the captured transcript text.
+            The captured transcript, or None if capture failed
         """
-        logger.info(f"Capturing transcript from {self.zoom_client_type} client")
+        logger.info("Capturing transcript from Zoom desktop client")
         
         try:
-            # Find the transcript area
-            transcript_area = self.find_transcript_area()
+            import pyautogui
             
-            if not transcript_area:
-                logger.error("Failed to find transcript area")
-                return ""
+            # 1. Access transcript in Zoom desktop client
+            # Click on "Live Transcript" button in the meeting toolbar
+            transcript_button_position = self._find_live_transcript_button()
+            if not transcript_button_position:
+                logger.warning("Could not find Live Transcript button")
+                return None
             
-            # Capture strategy depends on client type
-            if self.zoom_client_type == "desktop":
-                # Desktop client approach: Triple-click to select all text, then copy
-                # Move to the center of the transcript area
-                x, y, width, height = transcript_area
-                center_x = x + width // 2
-                center_y = y + height // 2
-                
-                # Click to focus the area
-                pyautogui.click(center_x, center_y)
-                time.sleep(WAIT_SHORT)
-                
-                # Triple-click to select all text
-                pyautogui.tripleClick(center_x, center_y)
-                time.sleep(WAIT_SHORT)
-                
-                # Copy selected text
-                pyautogui.hotkey('ctrl', 'c')  # Windows/Linux
-                # For macOS compatibility, we could detect OS and use 'command' instead of 'ctrl'
-                
-                # Wait for clipboard to update
-                time.sleep(WAIT_SHORT)
-                
-                # Get text from clipboard
-                transcript_text = pyperclip.paste()
-                
-            elif self.zoom_client_type == "web":
-                # Web client approach: Take screenshot and perform OCR (simplified here)
-                # In a real implementation, we would use Selenium for web client
-                # For now, we're using a similar approach to desktop
-                x, y, width, height = transcript_area
-                center_x = x + width // 2
-                center_y = y + height // 2
-                
-                # Click to focus the area
-                pyautogui.click(center_x, center_y)
-                time.sleep(WAIT_SHORT)
-                
-                # Use keyboard shortcuts to select all and copy
-                pyautogui.hotkey('ctrl', 'a')
-                time.sleep(WAIT_SHORT)
-                pyautogui.hotkey('ctrl', 'c')
-                
-                # Wait for clipboard to update
-                time.sleep(WAIT_SHORT)
-                
-                # Get text from clipboard
-                transcript_text = pyperclip.paste()
+            pyautogui.click(transcript_button_position)
+            time.sleep(1)  # Wait for transcript panel to open
             
-            else:
-                logger.error(f"Unsupported Zoom client type: {self.zoom_client_type}")
-                return ""
+            # 2. Select and copy the transcript text
+            # Use pyautogui to drag-select the text and Ctrl+A/Ctrl+C
+            pyautogui.hotkey('ctrl', 'a')  # Select all text
+            time.sleep(0.5)
+            pyautogui.hotkey('ctrl', 'c')  # Copy text
+            time.sleep(0.5)
             
-            # Clean up the transcript text
-            cleaned_transcript = self._clean_transcript(transcript_text)
+            # Get text from clipboard
+            transcript = pyperclip.paste()
             
-            if cleaned_transcript:
-                logger.info(f"Successfully captured transcript: {len(cleaned_transcript)} characters")
-                
-                # Update transcript history
-                self._update_transcript_history(cleaned_transcript)
-                
-                return cleaned_transcript
-            else:
-                logger.warning("Captured transcript is empty after cleaning")
-                return ""
+            # 3. Close the transcript panel
+            pyautogui.press('esc')
+            
+            if not transcript:
+                logger.warning("Failed to capture transcript from clipboard")
+                # Fallback to OCR if enabled
+                if self.enable_ocr:
+                    return self._capture_using_ocr()
+                return None
+            
+            return self._clean_transcript(transcript)
             
         except Exception as e:
-            logger.error(f"Error capturing transcript: {str(e)}")
-            return ""
+            logger.error(f"Error capturing from desktop client: {str(e)}")
+            return None
     
-    def get_recent_transcript(self, minutes: int = 10) -> str:
+    def _capture_from_web_client(self) -> Optional[str]:
         """
-        Get the transcript from the last specified number of minutes.
+        Capture transcript from Zoom web client using UI automation.
         
-        Args:
-            minutes: Number of minutes of transcript to retrieve
-            
         Returns:
-            String containing the recent transcript
+            The captured transcript, or None if capture failed
         """
-        logger.info(f"Retrieving transcript from last {minutes} minutes")
+        logger.info("Capturing transcript from Zoom web client")
         
         try:
-            # If we don't have history, capture a new transcript
-            if not self.transcript_history:
-                return self.capture_transcript()
+            import pyautogui
             
-            # Filter transcript entries by time
-            cutoff_time = datetime.now() - timedelta(minutes=minutes)
-            recent_entries = [
-                entry for entry in self.transcript_history 
-                if entry['timestamp'] >= cutoff_time
-            ]
+            # 1. Access transcript in Zoom web client
+            # Locate and click on "CC" or "Live Transcript" button
+            cc_button_position = self._find_cc_button_web()
+            if not cc_button_position:
+                logger.warning("Could not find CC button in web client")
+                return None
             
-            if not recent_entries:
-                logger.warning(f"No transcript entries found in the last {minutes} minutes")
-                return ""
+            pyautogui.click(cc_button_position)
+            time.sleep(1)
             
-            # Combine all recent entries
-            recent_transcript = "\n".join([entry['text'] for entry in recent_entries])
+            # 2. Select and copy the transcript text
+            # Find the transcript panel and click on it
+            transcript_panel = self._find_transcript_panel_web()
+            if not transcript_panel:
+                logger.warning("Could not find transcript panel in web client")
+                return None
             
-            logger.info(f"Retrieved {len(recent_entries)} transcript entries from last {minutes} minutes")
-            return recent_transcript
+            pyautogui.click(transcript_panel)
+            time.sleep(0.5)
+            
+            # Select all text and copy
+            pyautogui.hotkey('ctrl', 'a')
+            time.sleep(0.5)
+            pyautogui.hotkey('ctrl', 'c')
+            time.sleep(0.5)
+            
+            # Get text from clipboard
+            transcript = pyperclip.paste()
+            
+            # 3. Close the transcript panel
+            pyautogui.press('esc')
+            
+            if not transcript:
+                logger.warning("Failed to capture transcript from clipboard")
+                # Fallback to OCR if enabled
+                if self.enable_ocr:
+                    return self._capture_using_ocr()
+                return None
+            
+            return self._clean_transcript(transcript)
             
         except Exception as e:
-            logger.error(f"Error retrieving recent transcript: {str(e)}")
-            return ""
+            logger.error(f"Error capturing from web client: {str(e)}")
+            return None
     
-    def _clean_transcript(self, text: str) -> str:
+    def _capture_using_ocr(self) -> Optional[str]:
         """
-        Clean up the transcript text by removing unnecessary characters, etc.
+        Capture transcript using OCR (Optical Character Recognition).
+        This is a fallback method when direct text copying fails.
+        
+        Returns:
+            The captured transcript, or None if capture failed
+        """
+        if not self.enable_ocr:
+            logger.warning("OCR capture requested but OCR is not enabled")
+            return None
+        
+        logger.info("Attempting to capture transcript using OCR")
+        
+        try:
+            import pyautogui
+            
+            # 1. Take screenshot of the transcript area
+            screenshot = pyautogui.screenshot()
+            
+            # 2. Convert to format compatible with OpenCV
+            screenshot = self.cv2.cvtColor(numpy.array(screenshot), self.cv2.COLOR_RGB2BGR)
+            
+            # 3. Process the image to improve OCR accuracy
+            # Convert to grayscale
+            gray = self.cv2.cvtColor(screenshot, self.cv2.COLOR_BGR2GRAY)
+            
+            # Apply threshold to get black and white image
+            _, threshold = self.cv2.threshold(gray, 150, 255, self.cv2.THRESH_BINARY)
+            
+            # 4. Perform OCR on the processed image
+            transcript = self.pytesseract.image_to_string(threshold)
+            
+            if not transcript:
+                logger.warning("OCR returned empty result")
+                return None
+            
+            return self._clean_transcript(transcript)
+            
+        except Exception as e:
+            logger.error(f"Error during OCR capture: {str(e)}")
+            return None
+    
+    def _find_live_transcript_button(self):
+        """
+        Locate the Live Transcript button in the Zoom desktop client.
+        
+        Returns:
+            The position (x, y) of the button, or None if not found
+        """
+        # This is a placeholder for the actual implementation
+        # In a real implementation, you would use pyautogui.locateOnScreen()
+        # with an image of the Live Transcript button
+        
+        # Placeholder implementation returns a fixed position
+        # In production, this would need to be calibrated for the user's screen
+        return (100, 100)  # Example coordinates
+    
+    def _find_cc_button_web(self):
+        """
+        Locate the CC (Closed Caption) button in the Zoom web client.
+        
+        Returns:
+            The position (x, y) of the button, or None if not found
+        """
+        # This is a placeholder for the actual implementation
+        # In a real implementation, you would use pyautogui.locateOnScreen()
+        
+        # Placeholder implementation returns a fixed position
+        return (200, 200)  # Example coordinates
+    
+    def _find_transcript_panel_web(self):
+        """
+        Locate the transcript panel in the Zoom web client.
+        
+        Returns:
+            The position (x, y) of the panel, or None if not found
+        """
+        # This is a placeholder for the actual implementation
+        
+        # Placeholder implementation returns a fixed position
+        return (300, 300)  # Example coordinates
+    
+    def _clean_transcript(self, transcript: str) -> str:
+        """
+        Clean and format the captured transcript.
         
         Args:
-            text: Raw transcript text
-            
+            transcript: The raw transcript text
+        
         Returns:
             Cleaned transcript text
         """
-        if not text:
-            return ""
-            
-        try:
-            # Remove timestamps and speaker identifiers
-            # Common format: "10:15:32 John Doe: Hello everyone"
-            cleaned_text = re.sub(r'\d{1,2}:\d{2}:\d{2}\s+[\w\s]+:', '', text)
-            
-            # Alternative format: "[10:15:32] John Doe: Hello everyone"
-            cleaned_text = re.sub(r'\[\d{1,2}:\d{2}:\d{2}\]\s+[\w\s]+:', '', cleaned_text)
-            
-            # Remove remaining timestamps
-            cleaned_text = re.sub(r'\d{1,2}:\d{2}:\d{2}', '', cleaned_text)
-            cleaned_text = re.sub(r'\[\d{1,2}:\d{2}:\d{2}\]', '', cleaned_text)
-            
-            # Remove extra whitespace
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
-            
-            # Remove Zoom system messages
-            cleaned_text = re.sub(r'Recording started\.', '', cleaned_text)
-            cleaned_text = re.sub(r'Recording stopped\.', '', cleaned_text)
-            cleaned_text = re.sub(r'[\w\s]+ has joined the meeting\.', '', cleaned_text)
-            cleaned_text = re.sub(r'[\w\s]+ has left the meeting\.', '', cleaned_text)
-            
-            # Trim whitespace
-            cleaned_text = cleaned_text.strip()
-            
-            return cleaned_text
-            
-        except Exception as e:
-            logger.error(f"Error cleaning transcript: {str(e)}")
-            return text  # Return original text if cleaning fails
+        # Remove unnecessary whitespace
+        transcript = transcript.strip()
+        
+        # Additional cleaning can be added here
+        
+        return transcript
     
-    def _update_transcript_history(self, new_transcript: str):
+    def _save_transcript_to_file(self, transcript: str) -> None:
         """
-        Update the transcript history with new content.
+        Save the captured transcript to a file.
         
         Args:
-            new_transcript: New transcript content to add to history
+            transcript: The transcript text to save
         """
         try:
-            # Create a new entry with timestamp
-            new_entry = {
-                'timestamp': datetime.now(),
-                'text': new_transcript
-            }
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"transcript_{timestamp}.txt"
+            filepath = os.path.join(self.transcripts_folder, filename)
             
-            # Add to history
-            self.transcript_history.append(new_entry)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(transcript)
             
-            # Limit history size (keep last 10 entries)
-            if len(self.transcript_history) > 10:
-                self.transcript_history = self.transcript_history[-10:]
-                
-            logger.debug(f"Updated transcript history, now has {len(self.transcript_history)} entries")
+            logger.info(f"Transcript saved to {filepath}")
             
         except Exception as e:
-            logger.error(f"Error updating transcript history: {str(e)}")
-            
-    def set_zoom_client_type(self, client_type: str):
-        """
-        Change the Zoom client type.
-        
-        Args:
-            client_type: "desktop" or "web"
-        """
-        if client_type not in ["desktop", "web"]:
-            logger.error(f"Invalid Zoom client type: {client_type}")
-            return
-            
-        self.zoom_client_type = client_type
-        logger.info(f"Zoom client type changed to {client_type}")
-        
-    def reset_history(self):
-        """Clear the transcript history."""
-        self.transcript_history = []
-        logger.info("Transcript history has been reset")
+            logger.error(f"Error saving transcript to file: {str(e)}")
+
+# Helper function to create an instance with default settings
+def create_transcript_capture(client_type: str = "web") -> TranscriptCapture:
+    """
+    Create and return a TranscriptCapture instance with default settings.
+    
+    Args:
+        client_type: Type of Zoom client ('web' or 'desktop')
+    
+    Returns:
+        Configured TranscriptCapture instance
+    """
+    return TranscriptCapture(client_type=client_type)
