@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Constants
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
-    "zoom_client_type": "web",  # 'web' or 'desktop'
+    "zoom_client_type": "desktop",  # Force desktop client
     "transcript_interval": 10,  # minutes
     "poll_interval": 15,  # minutes
     "display_name": "Poll Generator",
@@ -39,7 +39,13 @@ Response format:
     "Option D"
   ]
 }
-"""
+""",
+    "wait_times": {
+        "zoom_launch": 8,       # seconds to wait for Zoom to launch
+        "join_screen": 5,       # seconds to wait for join screen
+        "meeting_load": 10,     # seconds to wait for meeting to load
+        "ui_action": 2,         # seconds to wait between UI actions
+    }
 }
 
 # Timing constants

@@ -1,0 +1,38 @@
+2025-04-15 06:32:27 [DEBUG] __main__: Logger initialized
+2025-04-15 06:32:27 [INFO] __main__: Initializing application
+2025-04-15 06:32:27 [INFO] __main__: Using Zoom client type: web
+2025-04-15 06:32:27 [INFO] __main__: Application initialized successfully
+2025-04-15 06:32:27 [INFO] __main__: Application is running. Press Ctrl+C to exit.
+2025-04-15 06:54:33 [INFO] __main__: Received signal 15, shutting down...
+2025-04-15 06:54:33 [WARNING] __main__: No active session to end
+2025-04-15 06:54:34 [DEBUG] __main__: Logger initialized
+2025-04-15 06:54:34 [INFO] __main__: Initializing application
+2025-04-15 06:54:34 [INFO] __main__: Using Zoom client type: web
+2025-04-15 06:54:34 [INFO] __main__: Application initialized successfully
+2025-04-15 06:54:34 [INFO] __main__: Application is running. Press Ctrl+C to exit.
+2025-04-15 14:12:26 [DEBUG] __main__: Logger initialized
+2025-04-15 14:12:26 [INFO] __main__: Initializing application
+2025-04-15 14:12:26 [INFO] __main__: Using Zoom client type: desktop
+2025-04-15 14:12:26 [INFO] __main__: Application initialized successfully
+2025-04-15 14:12:26 [INFO] __main__: Application is running. Press Ctrl+C to exit.
+2025-04-15 14:15:44 [INFO] __main__: Received signal 2, shutting down...
+2025-04-15 14:15:44 [WARNING] __main__: No active session to end
+2025-04-15 14:15:44 [INFO] __main__: Received signal 2, shutting down...
+2025-04-15 14:15:44 [WARNING] __main__: No active session to end
+2025-04-15 14:15:45 [INFO] __main__: Received signal 2, shutting down...
+2025-04-15 14:15:45 [WARNING] __main__: No active session to end
+2025-04-15 14:16:51 [DEBUG] __main__: Logger initialized
+2025-04-15 14:16:51 [INFO] __main__: Initializing application
+2025-04-15 14:16:51 [INFO] __main__: Using Zoom client type: desktop
+2025-04-15 14:16:51 [INFO] __main__: Application initialized successfully
+2025-04-15 14:16:51 [INFO] __main__: Application is running. Press Ctrl+C to exit.
+2025-04-15 14:24:39 [INFO] __main__: Received signal 2, shutting down...
+2025-04-15 14:24:39 [WARNING] __main__: No active session to end
+2025-04-15 14:26:15 [DEBUG] __main__: Logger initialized
+2025-04-15 14:26:15 [INFO] __main__: Initializing application
+2025-04-15 14:26:15 [INFO] __main__: Using Zoom client type: desktop
+2025-04-15 14:26:15 [INFO] __main__: Application initialized successfully
+2025-04-15 15:44:53 [DEBUG] __main__: Logger initialized
+2025-04-15 15:44:53 [INFO] __main__: Initializing application
+2025-04-15 15:44:53 [INFO] __main__: Using Zoom client type: desktop
+2025-04-15 15:44:53 [INFO] __main__: Application initialized successfully

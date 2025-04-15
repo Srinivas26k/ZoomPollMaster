@@ -4,11 +4,17 @@ Handles direct interactions with the Zoom client using UI automation.
 """
 
 import os
+import sys
 import time
 import logging
 import subprocess
 from typing import Optional, Dict, Any, Tuple
 from urllib.parse import urlparse
+import psutil
+import win32gui
+import win32con
+import win32process
+import pyautogui
 
 # Import selenium for web automation
 import selenium
@@ -29,21 +35,153 @@ class ZoomAutomation:
     """
     
     def __init__(self, client_type: str = "web"):
-        """
-        Initialize the Zoom automation module.
-        
-        Args:
-            client_type: Type of Zoom client ('web' or 'desktop')
-        """
+        """Initialize the Zoom automation module."""
         self.client_type = client_type.lower()
         self.meeting_id = None
         self.passcode = None
         self.display_name = None
-        self.driver = None  # For web client
+        self.driver = None
         self.meeting_active = False
+        self.zoom_window_handle = None
         
-        logger.info(f"ZoomAutomation initialized with {client_type} client type")
-    
+        # Initialize logger
+        self.configure_logging()
+        self.logger.info(f"ZoomAutomation initialized with {client_type} client type")
+
+    def configure_logging(self):
+        """Configure logging for the instance"""
+        logging.basicConfig(level=logging.INFO,
+                          format='%(asctime)s - %(levelname)s - %(message)s')
+        self.logger = logging.getLogger(__name__)
+
+    def open_zoom_app(self):
+        """Open Zoom application with error handling"""
+        try:
+            if sys.platform == 'darwin':  # macOS
+                pyautogui.hotkey('command', 'space')
+                pyautogui.write('zoom.us')
+            else:  # Windows
+                # Try direct path first
+                zoom_paths = [
+                    r"C:\Users\sonys\AppData\Roaming\Zoom\bin\Zoom.exe",
+                    r"C:\Users\sonys\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Zoom\Zoom.lnk",
+                    r"C:\Program Files\Zoom\bin\Zoom.exe",
+                    r"C:\Program Files (x86)\Zoom\bin\Zoom.exe"
+                ]
+                
+                for path in zoom_paths:
+                    if os.path.exists(path):
+                        self.logger.info(f"Found Zoom at {path}")
+                        os.startfile(path)
+                        time.sleep(2)  # Wait for launch
+                        return True
+                        
+                # If direct paths fail, try using Run dialog
+                self.logger.info("Direct paths failed, trying Run dialog...")
+                pyautogui.hotkey('win', 'r')
+                time.sleep(0.5)
+                pyautogui.write('zoom')
+                pyautogui.press('enter')
+                
+            time.sleep(2)  # Brief wait for initial launch
+            self.logger.info("Launched Zoom application")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to open Zoom: {str(e)}")
+            raise
+
+    def _verify_zoom_window(self, timeout=10):
+        """Verify Zoom window becomes active by checking for UI elements"""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                # Check for Participants button (visible in screenshot)
+                participants_region = (850, 540, 150, 50)
+                if pyautogui.locateOnScreen('assets/images/participants_button.png', 
+                                          region=participants_region,
+                                          confidence=0.8):
+                    logger.info("Zoom window verified - found Participants button")
+                    return True
+                time.sleep(0.5)
+            except Exception as e:
+                logger.debug(f"Verification attempt failed: {e}")
+        
+        logger.warning("Could not verify Zoom window")
+        return False
+        
+    def find_zoom_window(self) -> bool:
+        """Find and activate the Zoom meeting window."""
+        def enum_windows_callback(hwnd, _):
+            if win32gui.IsWindowVisible(hwnd):
+                window_text = win32gui.GetWindowText(hwnd)
+                if "Zoom Meeting" in window_text or "Zoom" in window_text:
+                    self.zoom_window_handle = hwnd
+                    return False
+            return True
+
+        try:
+            win32gui.EnumWindows(enum_windows_callback, None)
+            if self.zoom_window_handle:
+                # Bring window to front
+                win32gui.ShowWindow(self.zoom_window_handle, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(self.zoom_window_handle)
+                time.sleep(1)  # Give window time to activate
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error finding Zoom window: {str(e)}")
+            return False
+
+    def _get_zoom_path(self) -> Optional[str]:
+        """Get the Zoom executable path."""
+        if os.name == 'nt':  # Windows
+            # Use the provided Zoom path
+            zoom_path = r"C:\Users\sonys\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Zoom\Zoom Workplace.lnk"
+            if os.path.exists(zoom_path):
+                return zoom_path
+        return None
+
+    def ensure_zoom_is_running(self) -> bool:
+        """Ensure Zoom is running and find its process."""
+        try:
+            # First check if Zoom is already running
+            zoom_running = False
+            for proc in psutil.process_iter(['name']):
+                if 'zoom' in proc.info['name'].lower():
+                    zoom_running = True
+                    break
+            
+            if not zoom_running:
+                # Use the exact path we know works
+                zoom_path = r"C:\Users\sonys\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Zoom\Zoom Workplace.lnk"
+                if os.path.exists(zoom_path):
+                    logger.info(f"Launching Zoom from: {zoom_path}")
+                    os.startfile(zoom_path)  # Use os.startfile instead of subprocess
+                    time.sleep(self.config["wait_times"]["zoom_launch"])
+                else:
+                    # Fallback to join URL method
+                    logger.info("Using join URL method")
+                    os.system('start zoommtg://zoom.us/join')
+                    time.sleep(self.config["wait_times"]["zoom_launch"])
+            
+            # Try to find and activate the Zoom window
+            def enum_windows_callback(hwnd, extra):
+                if win32gui.IsWindowVisible(hwnd):
+                    window_text = win32gui.GetWindowText(hwnd).lower()
+                    if 'zoom' in window_text:
+                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        win32gui.SetForegroundWindow(hwnd)
+                        return True
+                return True
+            
+            win32gui.EnumWindows(enum_windows_callback, None)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error ensuring Zoom is running: {str(e)}")
+            return False
+
     def join_meeting(self, meeting_id: str, passcode: str, display_name: str = "Poll Generator") -> bool:
         """
         Join a Zoom meeting using the specified credentials.
@@ -83,37 +221,22 @@ class ZoomAutomation:
             return False
     
     def leave_meeting(self) -> bool:
-        """
-        Leave the current Zoom meeting.
-        
-        Returns:
-            Boolean indicating whether leaving was successful
-        """
-        if not self.meeting_active:
-            logger.warning("No active meeting to leave")
-            return False
-        
-        logger.info("Attempting to leave meeting")
-        
+        """Leave the current Zoom meeting using UI coordinates from screenshot"""
         try:
-            # Use appropriate leave method based on client type
-            if self.client_type == "desktop":
-                result = self._leave_meeting_desktop()
-            else:  # web client
-                result = self._leave_meeting_web()
+            # Click End button at bottom right
+            end_button_location = (960, 540)  # Location of End button
+            pyautogui.click(end_button_location)
+            time.sleep(1)
             
-            if result:
-                self.meeting_active = False
-                self.meeting_id = None
-                self.passcode = None
-                logger.info("Successfully left meeting")
-                return True
-            else:
-                logger.error("Failed to leave meeting")
-                return False
-                
+            # Click "Leave Meeting" in popup (coordinates from screenshot)
+            leave_meeting_location = (960, 500)  # Location of Leave Meeting button
+            pyautogui.click(leave_meeting_location)
+            
+            logger.info("Successfully left meeting")
+            self.meeting_active = False
+            return True
         except Exception as e:
-            logger.error(f"Error leaving meeting: {str(e)}")
+            logger.error(f"Failed to leave meeting: {e}")
             return False
     
     def check_meeting_status(self) -> bool:
@@ -166,62 +289,70 @@ class ZoomAutomation:
             return False
     
     def _join_meeting_desktop(self) -> bool:
-        """
-        Join a Zoom meeting using the desktop client.
-        
-        Returns:
-            Boolean indicating whether joining was successful
-        """
+        """Join a Zoom meeting using the desktop client."""
         try:
-            import pyautogui
+            pyautogui.PAUSE = 1  # Add a 1-second pause between actions
+            pyautogui.FAILSAFE = True
             
-            # Launch Zoom desktop client
-            # On Windows, typically: subprocess.Popen(["start", "zoommtg://zoom.us/join?confno={}".format(self.meeting_id)], shell=True)
-            # This is a placeholder implementation
+            # Step 1: Launch Zoom if not running
+            logger.info("Step 1: Launching Zoom application...")
+            zoom_path = r"C:\Users\sonys\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Zoom\Zoom Workplace.lnk"
+            if os.path.exists(zoom_path):
+                os.startfile(zoom_path)
+                time.sleep(5)  # Wait for Zoom to launch
             
-            # Use system-specific command to open Zoom
-            if os.name == 'nt':  # Windows
-                # Using zoommtg:// protocol to open Zoom
-                os.system(f'start zoommtg://zoom.us/join?confno={self.meeting_id}')
-            elif os.name == 'posix':  # macOS/Linux
-                # Using open command on macOS
-                os.system(f'open zoommtg://zoom.us/join?confno={self.meeting_id}')
+            # Step 2: Click Zoom icon in taskbar
+            logger.info("Step 2: Clicking Zoom taskbar icon...")
+            zoom_pos = self.locate_zoom_icon()
+            pyautogui.click(zoom_pos)
+            time.sleep(3)  # Increased wait time to ensure window appears
             
-            # Wait for Zoom to launch
-            time.sleep(3)
-            
-            # Find and click "Join a Meeting" button if needed
-            join_button = self._find_join_button_desktop()
-            if join_button:
-                pyautogui.click(join_button)
-                time.sleep(1)
-            
-            # Enter meeting ID if prompted
-            # This is a placeholder - in a real implementation, you'd need to locate the input field
-            pyautogui.write(self.meeting_id)
-            pyautogui.press('tab')
-            pyautogui.write(self.display_name)
-            pyautogui.press('tab')
-            pyautogui.press('tab')  # Navigate to the Join button
-            pyautogui.press('enter')
-            
-            # Wait for passcode prompt
+            # Step 3: Click Join Meeting button
+            logger.info("Step 3: Clicking Join Meeting button...")
+            pyautogui.click(x=1107, y=423)  # Coordinates for Join Meeting button
             time.sleep(2)
             
-            # Enter passcode
-            pyautogui.write(self.passcode)
+            # Rest of the steps for entering meeting ID and passcode
+            logger.info("Step 4: Entering Meeting ID...")
+            pyperclip.copy(self.meeting_id)
+            time.sleep(1)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(1)
+            pyautogui.press('enter')
+            time.sleep(2)
+            
+            logger.info("Step 5: Entering Passcode...")
+            pyperclip.copy(self.passcode)
+            time.sleep(1)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(1)
             pyautogui.press('enter')
             
-            # Wait for meeting to join
-            time.sleep(5)
+            # Final verification
+            logger.info("Step 6: Verifying meeting join...")
+            time.sleep(5)  # Wait for meeting interface
             
-            # Verify we're in the meeting
-            return self._check_meeting_status_desktop()
+            join_success = False
+            for control in ['assets/mic_button.png', 'assets/participants_button.png']:
+                try:
+                    if pyautogui.locateOnScreen(control, confidence=0.8, grayscale=True):
+                        join_success = True
+                        break
+                except Exception:
+                    continue
+            
+            if join_success:
+                self.meeting_active = True
+                logger.info("Successfully joined meeting")
+                return True
+            else:
+                logger.warning("Could not verify successful meeting join")
+                return False
             
         except Exception as e:
             logger.error(f"Error in desktop join process: {str(e)}")
             return False
-    
+
     def _join_meeting_web(self) -> bool:
         """
         Join a Zoom meeting using the web client.
@@ -292,28 +423,26 @@ class ZoomAutomation:
             Boolean indicating whether leaving was successful
         """
         try:
-            import pyautogui
-            
-            # Find and click "End" or "Leave" button
-            # This is a placeholder - you'd need to locate the button in the actual interface
-            end_button = self._find_leave_button_desktop()
+            # Look for the end meeting button
+            end_button = pyautogui.locateOnScreen('assets/end_button.png', confidence=0.8)
             if not end_button:
-                logger.warning("Could not find Leave button")
+                logger.warning("Could not find End Meeting button")
                 return False
             
-            pyautogui.click(end_button)
+            # Click the end button
+            pyautogui.click(pyautogui.center(end_button))
             time.sleep(1)
             
-            # If prompted to confirm leaving
-            confirm_button = self._find_leave_confirm_button_desktop()
+            # Look for and click the confirm end button if it appears
+            confirm_button = pyautogui.locateOnScreen('assets/confirm_end_button.png', confidence=0.8)
             if confirm_button:
-                pyautogui.click(confirm_button)
+                pyautogui.click(pyautogui.center(confirm_button))
             
-            # Wait a moment for the meeting to close
-            time.sleep(2)
+            # Wait for meeting to close
+            time.sleep(3)
             
-            # Verify we've left the meeting
-            return not self._check_meeting_status_desktop()
+            self.meeting_active = False
+            return True
             
         except Exception as e:
             logger.error(f"Error in desktop leave process: {str(e)}")
@@ -362,14 +491,18 @@ class ZoomAutomation:
             Boolean indicating whether in an active meeting
         """
         try:
-            import pyautogui
+            # Look for meeting control buttons to verify we're in a meeting
+            controls = [
+                'assets/mic_button.png',
+                'assets/participants_button.png',
+                'assets/polls_quizzes_button.jpg'
+            ]
             
-            # This is a placeholder implementation
-            # In a real implementation, you would look for visual indicators that we're in a meeting
-            # For example, looking for the "Leave Meeting" button or meeting controls
+            for control in controls:
+                if pyautogui.locateOnScreen(control, confidence=0.8):
+                    return True
             
-            # For now, we'll rely on our internal state
-            return self.meeting_active
+            return False
             
         except Exception as e:
             logger.error(f"Error checking desktop meeting status: {str(e)}")
@@ -406,8 +539,6 @@ class ZoomAutomation:
             Boolean indicating whether enabling was successful
         """
         try:
-            import pyautogui
-            
             # Find and click on "CC" button in the meeting controls
             cc_button = self._find_cc_button_desktop()
             if not cc_button:
@@ -476,6 +607,93 @@ class ZoomAutomation:
             logger.error(f"Error initializing WebDriver: {str(e)}")
             self.driver = None
     
+    def locate_zoom_icon(self):
+        """Locate the Zoom icon on screen using multiple image variants"""
+        icon_variants = [
+            ('assets/images/zoom_icon_taskbar.png', 0.8),
+            ('assets/images/zoom_icon_desktop.png', 0.8),
+            ('assets/images/zoom_icon_start.png', 0.8)
+        ]
+        
+        for img_path, confidence in icon_variants:
+            try:
+                pos = pyautogui.locateCenterOnScreen(img_path, confidence=confidence)
+                if pos:
+                    logger.info(f"Found Zoom icon using {img_path}")
+                    return pos
+            except Exception as e:
+                logger.debug(f"Failed to find {img_path}: {e}")
+                continue
+        
+        logger.warning("Could not find Zoom icon, using fallback coordinates")
+        return (1039, 1056)
+    
+    def click_join_meeting(self):
+        """Clicks the 'Join' button and handles the meeting ID input"""
+        try:
+            # Method 1: Try image recognition with high confidence
+            self.logger.info("Attempting to find join button using image recognition...")
+            join_button = None
+            
+            try:
+                join_button = pyautogui.locateOnScreen(
+                    'assets/images/zoom_join_meeting_button.png',
+                    confidence=0.8
+                )
+                if join_button:
+                    self.logger.info(f"Found join button at {join_button}")
+                    pyautogui.click(pyautogui.center(join_button))
+                    time.sleep(1)
+                    return True
+            except Exception as img_error:
+                self.logger.debug(f"Image recognition attempt failed: {img_error}")
+
+            # Method 2: Try with lower confidence
+            try:
+                self.logger.info("Trying with lower confidence threshold...")
+                join_button = pyautogui.locateOnScreen(
+                    'assets/images/zoom_join_meeting_button.png',
+                    confidence=0.6
+                )
+                if join_button:
+                    self.logger.info(f"Found join button with lower confidence at {join_button}")
+                    pyautogui.click(pyautogui.center(join_button))
+                    time.sleep(1)
+                    return True
+            except Exception as img_error:
+                self.logger.debug(f"Lower confidence attempt failed: {img_error}")
+
+            # Method 3: Try common coordinates
+            self.logger.info("Trying predefined coordinates...")
+            common_coords = [
+                (1107, 423),  # Original coordinate
+                (850, 480),   # Alternative 1
+                (960, 540),   # Center of 1920x1080 screen
+                (480, 270)    # Center of 960x540 screen
+            ]
+            
+            for x, y in common_coords:
+                try:
+                    self.logger.info(f"Trying coordinates ({x}, {y})")
+                    pyautogui.moveTo(x, y, duration=0.5)
+                    # Check if the pixel color matches the typical Zoom blue
+                    if pyautogui.pixelMatchesColor(x, y, (0, 122, 255), tolerance=30):
+                        pyautogui.click(x, y)
+                        self.logger.info(f"Successfully clicked join button at ({x}, {y})")
+                        time.sleep(1)
+                        return True
+                except Exception as coord_error:
+                    self.logger.debug(f"Coordinate attempt ({x}, {y}) failed: {coord_error}")
+                    continue
+
+            # If we get here, all methods failed
+            self.logger.error("All attempts to find join button failed")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Failed to click Join button: {str(e)}")
+            return False
+    
     def _find_join_button_desktop(self) -> Optional[Tuple[int, int]]:
         """
         Find the "Join a Meeting" button in the desktop client.
@@ -483,9 +701,18 @@ class ZoomAutomation:
         Returns:
             Tuple (x, y) with button coordinates or None if not found
         """
-        # This is a placeholder for the actual implementation
-        # In a real implementation, you would use pyautogui.locateOnScreen()
-        return (500, 300)  # Example coordinates
+        try:
+            # Try to locate the Join Meeting button image
+            location = pyautogui.locateOnScreen('assets/join_button.png', confidence=0.8)
+            if location:
+                return pyautogui.center(location)
+            
+            # Fallback to direct click if image not found
+            # These coordinates are for a typical 1920x1080 screen
+            return (960, 540)  # Center of screen
+        except Exception as e:
+            logger.error(f"Error finding join button: {str(e)}")
+            return None
     
     def _find_leave_button_desktop(self) -> Optional[Tuple[int, int]]:
         """
@@ -517,6 +744,16 @@ class ZoomAutomation:
         # This is a placeholder for the actual implementation
         return (600, 700)  # Example coordinates
     
+    def get_current_mouse_position(self):
+        """Get the current mouse position for coordinate calibration."""
+        try:
+            while True:
+                x, y = pyautogui.position()
+                logger.info(f"Current mouse position: x={x}, y={y}")
+                time.sleep(1)  # Update every second
+        except KeyboardInterrupt:
+            logger.info("Coordinate capture stopped")
+    
     def close(self) -> None:
         """
         Clean up resources (e.g., WebDriver for web client).
@@ -529,6 +766,47 @@ class ZoomAutomation:
                 logger.error(f"Error closing WebDriver: {str(e)}")
             finally:
                 self.driver = None
+
+    def configure_logging(self):
+        logging.basicConfig(level=logging.INFO,
+                          format='%(asctime)s - %(levelname)s - %(message)s')
+        self.logger = logging.getLogger(__name__)
+
+    def wait_for_element(self, image_path: str, timeout: int = 10, confidence: float = 0.8) -> Optional[tuple]:
+        """Wait for an element to appear on screen and return its position"""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                location = pyautogui.locateCenterOnScreen(image_path, confidence=confidence)
+                if location:
+                    return location
+            except Exception as e:
+                self.logger.debug(f"Error locating element: {e}")
+            time.sleep(0.5)
+        return None
+
+    def click_element(self, image_path: str, retries: int = 3) -> bool:
+        """Click an element with retry mechanism"""
+        for attempt in range(retries):
+            location = self.wait_for_element(image_path)
+            if location:
+                pyautogui.click(location)
+                self.logger.info(f"Successfully clicked element: {image_path}")
+                return True
+            self.logger.warning(f"Attempt {attempt + 1}/{retries} failed to find element: {image_path}")
+        return False
+
+    def open_zoom_and_click_join(self):
+        """Ensures Zoom is open, then clicks the 'Join Meeting' button with proper error handling"""
+        try:
+            self.open_zoom_app()
+            # Wait for Zoom to fully load and become interactive
+            time.sleep(3)  # Keep minimal initial wait
+            self.click_join_meeting()
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to complete Zoom joining process: {e}")
+            return False
 
 # Helper function to create an instance with default settings
 def create_zoom_automation(client_type: str = "web") -> ZoomAutomation:

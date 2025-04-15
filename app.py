@@ -135,27 +135,33 @@ def capture_real_transcript():
         if not meeting_id or not passcode:
             add_log_entry("Error: Missing Zoom meeting credentials")
             return None
+            
+        # Initialize transcript capture if needed
+        global transcript_capture
+        if not transcript_capture:
+            from transcript_capture import create_transcript_capture
+            transcript_capture = create_transcript_capture(client_type=client_type)
+            
+        # Initialize Zoom automation if needed
+        global zoom_automation
+        if not zoom_automation:
+            from zoom_automation import create_zoom_automation
+            zoom_automation = create_zoom_automation(client_type=client_type)
+            
+            # Join the meeting if not already in one
+            if not zoom_automation.check_meeting_status():
+                zoom_automation.join_meeting(meeting_id, passcode, display_name)
         
-        # In a real implementation, this would use our transcript_capture module
-        # For now, use a realistic transcript sample
-        transcript = """
-        Manager: Welcome to today's project status meeting. Let's discuss our progress on the new product features.
-        Developer 1: I've completed the backend API for user authentication and profile management.
-        Designer: The UI mockups for the dashboard are ready for review. I'm focusing on making the data visualization intuitive.
-        Developer 2: Testing has revealed some performance issues when multiple users access the system simultaneously.
-        Manager: That's concerning. What's causing the bottleneck?
-        Developer 2: Database queries aren't optimized for concurrent access. We need to implement caching.
-        Developer 1: I agree. We should also consider connection pooling for the database.
-        Manager: How long will that take to implement?
-        Developer 1: Approximately 3-4 days for implementation and testing.
-        Designer: While that's happening, I can finalize the responsive design for mobile devices.
-        Manager: Perfect. Let's make these changes a priority for this sprint.
-        """
-        
-        recent_transcript = transcript
-        add_log_entry("Transcript captured successfully from Zoom meeting")
-        return transcript
-        
+        # Capture actual transcript
+        transcript = transcript_capture.capture_transcript()
+        if transcript:
+            recent_transcript = transcript
+            add_log_entry(f"Transcript captured successfully ({len(transcript)} characters)")
+            return transcript
+        else:
+            add_log_entry("Failed to capture transcript from Zoom meeting")
+            return None
+            
     except Exception as e:
         add_log_entry(f"Error capturing transcript: {str(e)}")
         return None

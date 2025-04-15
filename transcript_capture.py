@@ -97,43 +97,79 @@ class TranscriptCapture:
         
         try:
             import pyautogui
+            import win32gui
+            import win32con
             
-            # 1. Access transcript in Zoom desktop client
-            # Click on "Live Transcript" button in the meeting toolbar
-            transcript_button_position = self._find_live_transcript_button()
-            if not transcript_button_position:
+            # 1. Ensure we're in the Zoom window
+            def enum_windows_callback(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd):
+                    window_text = win32gui.GetWindowText(hwnd)
+                    if "Zoom Meeting" in window_text or "Zoom" in window_text:
+                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        win32gui.SetForegroundWindow(hwnd)
+                        return False
+                return True
+            
+            win32gui.EnumWindows(enum_windows_callback, None)
+            time.sleep(2)  # Wait for window to activate
+            
+            # 2. Access transcript in Zoom desktop client
+            # Look for and click "Live Transcript" button
+            transcript_button = None
+            for _ in range(3):  # Try up to 3 times
+                try:
+                    transcript_button = pyautogui.locateOnScreen('assets/transcript_button.jpg', 
+                                                               confidence=0.8,
+                                                               grayscale=True)
+                    if transcript_button:
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+            
+            if not transcript_button:
                 logger.warning("Could not find Live Transcript button")
                 return None
             
-            pyautogui.click(transcript_button_position)
-            time.sleep(1)  # Wait for transcript panel to open
+            # Click the transcript button
+            pyautogui.click(pyautogui.center(transcript_button))
+            time.sleep(2)  # Wait for transcript panel to open
             
-            # 2. Select and copy the transcript text
-            # Use pyautogui to drag-select the text and Ctrl+A/Ctrl+C
+            # 3. Select and copy the transcript text
             pyautogui.hotkey('ctrl', 'a')  # Select all text
-            time.sleep(0.5)
+            time.sleep(1)
             pyautogui.hotkey('ctrl', 'c')  # Copy text
-            time.sleep(0.5)
+            time.sleep(1)
             
-            # Get text from clipboard
+            # 4. Get text from clipboard
+            import pyperclip
             transcript = pyperclip.paste()
             
-            # 3. Close the transcript panel
+            # 5. Close the transcript panel
             pyautogui.press('esc')
+            time.sleep(1)
             
             if not transcript:
                 logger.warning("Failed to capture transcript from clipboard")
-                # Fallback to OCR if enabled
+                # Try OCR if enabled
                 if self.enable_ocr:
                     return self._capture_using_ocr()
                 return None
             
-            return self._clean_transcript(transcript)
+            # Clean and return the transcript
+            cleaned = self._clean_transcript(transcript)
+            if cleaned:
+                # Save transcript if configured
+                if self.save_transcripts:
+                    self._save_transcript_to_file(cleaned)
+                return cleaned
+            
+            return None
             
         except Exception as e:
             logger.error(f"Error capturing from desktop client: {str(e)}")
             return None
-    
+
     def _capture_from_web_client(self) -> Optional[str]:
         """
         Capture transcript from Zoom web client using UI automation.
@@ -193,41 +229,34 @@ class TranscriptCapture:
     
     def _capture_using_ocr(self) -> Optional[str]:
         """
-        Capture transcript using OCR (Optical Character Recognition).
-        This is a fallback method when direct text copying fails.
+        Capture transcript using OCR as a fallback method.
         
         Returns:
             The captured transcript, or None if capture failed
         """
-        if not self.enable_ocr:
-            logger.warning("OCR capture requested but OCR is not enabled")
-            return None
-        
-        logger.info("Attempting to capture transcript using OCR")
-        
         try:
-            import pyautogui
+            import cv2
+            import numpy as np
+            import pytesseract
             
-            # 1. Take screenshot of the transcript area
+            # Take screenshot of the transcript area
             screenshot = pyautogui.screenshot()
+            screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
             
-            # 2. Convert to format compatible with OpenCV
-            screenshot = self.cv2.cvtColor(numpy.array(screenshot), self.cv2.COLOR_RGB2BGR)
-            
-            # 3. Process the image to improve OCR accuracy
             # Convert to grayscale
-            gray = self.cv2.cvtColor(screenshot, self.cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
             
-            # Apply threshold to get black and white image
-            _, threshold = self.cv2.threshold(gray, 150, 255, self.cv2.THRESH_BINARY)
+            # Apply thresholding to get black text on white background
+            _, threshold = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
             
-            # 4. Perform OCR on the processed image
-            transcript = self.pytesseract.image_to_string(threshold)
+            # Perform OCR
+            transcript = pytesseract.image_to_string(threshold)
             
             if not transcript:
                 logger.warning("OCR returned empty result")
                 return None
             
+            # Clean and return the transcript
             return self._clean_transcript(transcript)
             
         except Exception as e:
@@ -275,37 +304,45 @@ class TranscriptCapture:
         return (300, 300)  # Example coordinates
     
     def _clean_transcript(self, transcript: str) -> str:
-        """
-        Clean and format the captured transcript.
+        """Clean and format the captured transcript."""
+        if not transcript:
+            return ""
+            
+        # Split into lines and clean each line
+        lines = transcript.splitlines()
+        cleaned_lines = []
         
-        Args:
-            transcript: The raw transcript text
+        for line in lines:
+            # Remove timestamps if present (like "10:45:23")
+            line = re.sub(r'\d{1,2}:\d{2}:\d{2}\s*', '', line)
+            
+            # Remove speaker labels if present (like "John Doe:")
+            line = re.sub(r'^[^:]+:\s*', '', line)
+            
+            # Clean whitespace
+            line = line.strip()
+            
+            if line:  # Only keep non-empty lines
+                cleaned_lines.append(line)
         
-        Returns:
-            Cleaned transcript text
-        """
-        # Remove unnecessary whitespace
-        transcript = transcript.strip()
-        
-        # Additional cleaning can be added here
-        
-        return transcript
-    
+        # Join cleaned lines back together
+        return " ".join(cleaned_lines)
+
     def _save_transcript_to_file(self, transcript: str) -> None:
-        """
-        Save the captured transcript to a file.
-        
-        Args:
-            transcript: The transcript text to save
-        """
+        """Save the transcript to a file with timestamp."""
         try:
+            # Create transcripts directory if it doesn't exist
+            os.makedirs("transcripts", exist_ok=True)
+            
+            # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"transcript_{timestamp}.txt"
-            filepath = os.path.join(self.transcripts_folder, filename)
+            filepath = os.path.join("transcripts", filename)
             
+            # Save transcript
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(transcript)
-            
+                
             logger.info(f"Transcript saved to {filepath}")
             
         except Exception as e:

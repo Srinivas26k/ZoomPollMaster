@@ -1,5 +1,5 @@
 {
-    "zoom_client_type": "web",
+    "zoom_client_type": "desktop",
     "transcript_interval": 10,
     "poll_interval": 15,
     "display_name": "Poll Generator",
@@ -9,5 +9,11 @@
     "check_interval": 30,
     "save_transcripts": true,
     "transcripts_folder": "./transcripts",
-    "poll_generation_prompt": "Based on the transcript below from a Zoom meeting, generate one engaging poll question with exactly four answer options. Format your response as a JSON object with \"question\" and \"options\" keys, where \"options\" is a list of four answer choices. The poll should be relevant to the content discussed in the transcript and encourage participation.\n\nTranscript:\n{transcript}\n\nResponse format:\n{\n  \"question\": \"Your poll question here?\",\n  \"options\": [\n    \"Option A\",\n    \"Option B\",\n    \"Option C\",\n    \"Option D\"\n  ]\n}\n"
+    "poll_generation_prompt": "Based on the transcript below from a Zoom meeting, generate one engaging poll question with exactly four answer options. Format your response as a JSON object with \"question\" and \"options\" keys, where \"options\" is a list of four answer choices. The poll should be relevant to the content discussed in the transcript and encourage participation.\n\nTranscript:\n{transcript}\n\nResponse format:\n{\n  \"question\": \"Your poll question here?\",\n  \"options\": [\n    \"Option A\",\n    \"Option B\",\n    \"Option C\",\n    \"Option D\"\n  ]\n}\n",
+    "wait_times": {
+        "zoom_launch": 8,
+        "join_screen": 5,
+        "meeting_load": 10,
+        "ui_action": 2
+    }
 }

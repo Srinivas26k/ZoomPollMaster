@@ -8,6 +8,8 @@ import time
 import signal
 import logging
 import argparse
+import tkinter as tk
+from tkinter import ttk, messagebox
 from typing import Dict, List, Any, Optional
 
 # Configure basic logging before imports
@@ -51,25 +53,89 @@ recent_transcript = None
 current_poll = None
 session_active = False
 
-def initialize() -> bool:
-    """
-    Initialize the application.
+class CredentialsDialog:
+    def __init__(self, parent):
+        self.result = None
+        
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Enter Zoom Meeting Credentials")
+        self.dialog.geometry("400x200")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # Center the dialog
+        self.dialog.update_idletasks()
+        width = self.dialog.winfo_width()
+        height = self.dialog.winfo_height()
+        x = (self.dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (height // 2)
+        self.dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Create widgets
+        frame = ttk.Frame(self.dialog, padding="10")
+        frame.grid(row=0, column=0, sticky="nsew")
+        
+        ttk.Label(frame, text="Meeting ID:").grid(row=0, column=0, sticky="w", pady=5)
+        self.meeting_id = ttk.Entry(frame, width=30)
+        self.meeting_id.grid(row=0, column=1, sticky="w", pady=5)
+        
+        ttk.Label(frame, text="Passcode:").grid(row=1, column=0, sticky="w", pady=5)
+        self.passcode = ttk.Entry(frame, width=30)
+        self.passcode.grid(row=1, column=1, sticky="w", pady=5)
+        
+        ttk.Label(frame, text="Display Name:").grid(row=2, column=0, sticky="w", pady=5)
+        self.display_name = ttk.Entry(frame, width=30)
+        self.display_name.insert(0, "Poll Generator")
+        self.display_name.grid(row=2, column=1, sticky="w", pady=5)
+        
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(btn_frame, text="Join", command=self.on_join).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.on_cancel).pack(side="left", padx=5)
+
+    def on_join(self):
+        if not self.meeting_id.get() or not self.passcode.get():
+            messagebox.showerror("Error", "Please enter both Meeting ID and Passcode")
+            return
+            
+        self.result = {
+            "meeting_id": self.meeting_id.get(),
+            "passcode": self.passcode.get(),
+            "display_name": self.display_name.get()
+        }
+        self.dialog.destroy()
+        
+    def on_cancel(self):
+        self.dialog.destroy()
+
+def prompt_credentials():
+    """Prompt for Zoom meeting credentials using a GUI dialog."""
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
     
-    Returns:
-        Boolean indicating whether initialization was successful
-    """
+    dialog = CredentialsDialog(root)
+    root.wait_window(dialog.dialog)
+    
+    root.destroy()
+    return dialog.result
+
+def initialize() -> bool:
+    """Initialize the application."""
     global transcript_capture, chatgpt_integration, poll_posting, zoom_automation, scheduler, credential_manager, config, session_active
     
     try:
-        # Configure logger
-        logger = get_logger(__name__)
+        logger.debug("Logger initialized")
         logger.info("Initializing application")
         
-        # Load configuration
+        # Load configuration with desktop client type
         config = load_config()
+        config["zoom_client_type"] = "desktop"  # Force desktop client type
+        save_config(config)
         
         # Create component instances
-        client_type = config.get("zoom_client_type", "web")
+        client_type = "desktop"  # Force desktop client type
         logger.info(f"Using Zoom client type: {client_type}")
         
         transcript_capture = create_transcript_capture(client_type=client_type)
@@ -330,46 +396,81 @@ def parse_arguments():
     return parser.parse_args()
 
 def main():
-    """
-    Main entry point.
-    """
-    # Parse command-line arguments
-    args = parse_arguments()
-    
-    # Initialize application
+    """Main entry point."""
     if not initialize():
         logger.error("Failed to initialize application")
         sys.exit(1)
     
-    # Apply command-line overrides to configuration
-    if args.client:
-        config["zoom_client_type"] = args.client
-        save_config(config)
-    
-    if args.transcript_interval:
-        config["transcript_interval"] = args.transcript_interval
-        save_config(config)
-    
-    if args.poll_interval:
-        config["poll_interval"] = args.poll_interval
-        save_config(config)
-    
-    # Start session if auto-start is enabled or requested via command line
-    if args.start or config.get("auto_start", False):
+    try:
+        # Prompt for credentials
+        credentials = prompt_credentials()
+        if not credentials:
+            logger.info("User cancelled credential input")
+            sys.exit(0)
+        
+        # Clean up existing Zoom processes
+        try:
+            import psutil
+            for proc in psutil.process_iter(['name']):
+                if 'zoom' in proc.info['name'].lower():
+                    logger.info(f"Terminating existing Zoom process: {proc.info['name']}")
+                    proc.kill()
+                    time.sleep(2)
+        except Exception as e:
+            logger.warning(f"Could not check for existing Zoom process: {str(e)}")
+        
+        # Start session
         if not start_session():
             logger.error("Failed to start session")
+            messagebox.showerror("Error", "Failed to start session. Please check logs for details.")
             sys.exit(1)
-    
-    try:
-        # Keep the script running
-        logger.info("Application is running. Press Ctrl+C to exit.")
         
-        while True:
-            time.sleep(1)
-            
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user")
-        end_session()
+        # Join the meeting
+        if not zoom_automation.join_meeting(
+            credentials["meeting_id"],
+            credentials["passcode"],
+            credentials["display_name"]
+        ):
+            logger.error("Failed to join meeting")
+            messagebox.showerror("Error", "Failed to join meeting. Please check your credentials and try again.")
+            sys.exit(1)
+        
+        # Main application loop
+        try:
+            logger.info("Application is running. Press Ctrl+C to exit.")
+            while True:
+                # Check meeting status every 5 seconds
+                if not zoom_automation.check_meeting_status():
+                    logger.warning("Meeting status check failed, attempting to rejoin...")
+                    zoom_automation.join_meeting(
+                        credentials["meeting_id"],
+                        credentials["passcode"],
+                        credentials["display_name"]
+                    )
+                    
+                # If transcripts are enabled, check and create directory
+                if config["save_transcripts"]:
+                    os.makedirs(config["transcripts_folder"], exist_ok=True)
+                
+                time.sleep(5)
+                
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        
+    except Exception as e:
+        logger.error(f"Fatal error: {str(e)}")
+        messagebox.showerror("Error", f"A fatal error occurred: {str(e)}")
+        sys.exit(1)
+        
+    finally:
+        # Clean up
+        try:
+            if zoom_automation:
+                zoom_automation.leave_meeting()
+            end_session()
+            logger.info("Application shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
         sys.exit(0)
 
 if __name__ == "__main__":
