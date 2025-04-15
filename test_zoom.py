@@ -35,7 +35,7 @@ def test_zoom_automation():
             logging.info("Successfully clicked join button")
             
             # Real meeting ID
-            test_meeting_id = "886 4636 3911"
+            test_meeting_id = "84795972782"
             
             # Step 3: Wait for and enter meeting ID
             logging.info("Step 3: Waiting for meeting ID input box...")
